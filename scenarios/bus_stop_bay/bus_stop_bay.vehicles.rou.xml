@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='utf-8'?>
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <vType id="truck" length="4.50" minGap="2.50" maxSpeed="40.11" probability="1.00" speedFactor="normc(0.97,0.12,0.20,2.00)" vClass="truck" impatience="0.35" guiShape="truck" width="1.60" lcStrategic="63.67" lcCooperative="1.63" lcSpeedGain="5.84" lcKeepRight="0.86" lcImpatience="0.19" lcMaxSpeedLatStanding="0.00" lcSigma="0.19" accel="1.48" decel="3.93" sigma="0.53" />
+<!--    <vehicle id="0" depart="0.00" departLane="0" departPos="0" departSpeed="10">-->
+<!--        <route edges="1" />-->
+<!--    </vehicle>-->
+<!--    <vType id="passenger" length="5.00" minGap="2.50" maxSpeed="50.00" probability="4.00" speedFactor="normc(1.02,0.13,0.20,2.00)" vClass="passenger" impatience="0.44" guiShape="passenger" width="2.00" lcStrategic="15.21" lcCooperative="2.48" lcSpeedGain="15.75" lcKeepRight="0.81" lcImpatience="0.35" lcMaxSpeedLatStanding="0.00" lcSigma="0.19" accel="2.54" decel="6.37" sigma="0.60" />-->
+    <vehicle id="1" depart="0.0" departLane="1" departPos="0" departSpeed="10">
+        <route edges="1" />
+    </vehicle>
+    <vehicle id="2" depart="1.0" departLane="0" departPos="0" departSpeed="10">
+        <route edges="1" />
+    </vehicle>
+    <vehicle id="3" depart="8.5" departLane="0" departPos="20" departSpeed="10">
+        <route edges="1" />
+    </vehicle>
+    <vehicle id="4" depart="3.5" departLane="1" departPos="0" departSpeed="10">
+        <route edges="1" />
+    </vehicle>
+    <vehicle id="6" depart="24.5" departLane="1" departPos="20" departSpeed="10">
+        <route edges="1" />
+    </vehicle>
+    <vehicle id="5" depart="30.2" departLane="0"  departPos="30.2"  departSpeed="5">
+        <route edges="303" />
+    </vehicle>
+
+
+</routes>

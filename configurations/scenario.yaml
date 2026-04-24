@@ -1,0 +1,11 @@
+scenario:
+  #  bus_stop_bay or bus_stop_bulb
+  type: bus_stop_bay
+
+
+debug:
+
+  plot_png: True
+
+  use_post_opt: True
+

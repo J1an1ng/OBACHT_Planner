@@ -1,0 +1,65 @@
+# Traffic rules formalized in metric temporal logic (MTL)
+###
+# .. code-block:: yaml
+#
+#   - R_G1: safe distance preceding, considering cut-in vehicles
+#   - R_G2: unnecessary braking only if safe distance is violated
+#   - R_G3: speed limit
+traffic_rules:
+  R_G1: 'A a1: ((in_front_of(a0,a1)_i and in_same_lane(a0,a1)_i and !once[0, 3s](cut_in(a1,a0)_i and prev(not cut_in(a1,a0)_i))) implies keeps_safe_distance_prec(a0,a1))'
+  R_G2: 'brakes_abruptly(a0)_i implies E a1: (precedes(a0, a1) and (not keeps_safe_distance_prec(a0, a1) or not rel_brakes_abruptly(a0, a1)_i))'
+  R_G3: keeps_lane_speed_limit(a0) and keeps_type_speed_limit(a0) and keeps_fov_speed_limit(a0) and keeps_brake_speed_limit(a0)
+
+  R_G4: not slow_leading_vehicle(a0)_i implies preserves_traffic_flow(a0)
+
+  R_I1: not(in_congestion(a0)_i or exist_standing_leading_vehicle(a0)_i) implies not in_standstill(a0)
+  R_I2: 'A a1: (left_of(a1,a0)_i and drives_faster(a0, a1)_i implies ((in_congestion(a1) or in_slow_moving_traffic(a1) or in_queue_of_vehicles(a1)) and drives_with_slightly_higher_speed(a0, a1)) or (right_of_broad_lane_marking(a0) and left_of_broad_lane_marking(a1)) or (on_access_ramp(a0) and on_main_carriage_way(a1) and not (in_congestion(a1) or in_slow_moving_traffic(a1) or in_queue_of_vehicles(a1))))'
+  R_I3: not makes_u_turn(a0) and not reverses(a0)
+  R_I4: in_congestion(a0)_i or in_slow_moving_traffic(a0)_i implies (interstate_broad_enough(a0) implies not on_shoulder(a0) and (in_leftmost_lane(a0) implies drives_leftmost(a0) and single_lane(a0)) and (not in_leftmost_lane(a0) implies drives_rightmost(a0))) and (not interstate_broad_enough(a0) implies drives_rightmost(a0) and in_rightmost_lane(a0) and single_lane(a0))
+  R_I5: 'A a1: ((on_main_carriage_way(a0)_i and in_front_of(a0, a1)_i and on_access_ramp(a1)_i and eventually[0, 5s](on_main_carriage_way(a1))) implies (not(not(main_carriageway_right_lane(a0)) and eventually[0, 5s](main_carriageway_right_lane(a0)))))'
+    # Wait at traffic light with turn on red exception
+  R_IN2_TOR: (once (not (prev not sl_in_front(a0))) and (not sl_in_front(a0)) and on_intersection(a0) and tl_red(a0)_i) implies (on_right_turn(a0) or (not on_intersection(a0)))
+    # RTAMT implements the weak previous operator, which has value inf at time step 0.
+    # Using "not (weak) prev not A <=> (strong) prev A" we can rewrite the formula using only the weak prev operator.
+    # Stop sign rule translated to past-time
+  R_IN1_past: ((not prev not sl_in_front(a0)) and (not sl_in_front(a0))) implies once(historically[0, 3s](sl_in_front(a0) and in_standstill(a0)))
+
+
+# Parameters for traffic rules
+###
+# .. code-block:: yaml
+#
+#   - a_abrupt: acceleration difference which indicates abrupt braking
+#   - min_velocity_dif: minimum velocity difference
+#   - standstill_error: velocity deviation from zero which is still classified to be standstill
+#   - num_veh_congestion: minimum number of slow-moving leading vehicles so that a vehicle can be assumed to be part of a congestion
+#   - max_congestion_velocity: maximum velocity of a vehicle withing a congestion
+#   - max_velocity_limit_free_driving:
+#   - desired_interstate_velocity: desired velocity on interstates
+#   - min_interstate_width: minimum interstate width so that emergency lane can be created
+#   - close_to_lane_border:  indicator if vehicle is close to lane border
+#   - slightly_higher_speed_difference:  indicator for slightly higher speed
+#   - u_turn: angle [rad] indicating u-turn
+#   - country: countries where traffic rules are applied
+traffic_rules_param:
+  j_abrupt: -2 # for ego vehicle emergency profile calculation
+  a_abrupt: -2
+  standstill_error: 0.01
+  min_velocity_dif: 15
+  num_veh_congestion: 3
+  max_congestion_velocity: 2.78
+  num_veh_slow_moving_traffic: 3
+  max_slow_moving_traffic_velocity: 8.33
+  num_veh_queue_of_vehicles: 3
+  max_queue_of_vehicles_velocity: 3
+  max_velocity_limit_free_driving: 16.67
+  desired_interstate_velocity: 36.11
+  min_interstate_width: 7.0
+  close_to_lane_border: 0.2
+  close_to_other_vehicle: 0.5
+  slightly_higher_speed_difference: 5.55
+  u_turn: 1.57
+  country: DEU
+  above_centerline_th: 0.1
+  max_interstate_speed_truck: 22.22
+  d_sl: 1.0

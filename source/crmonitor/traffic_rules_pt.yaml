@@ -1,0 +1,83 @@
+# Formalization of Traffic Rules for Public Transport Vehicles in metric temporal logic (MTL)
+###
+# .. code-block:: yaml
+#
+
+traffic_rules:
+  # General Traffic Rules for all vehicles
+  # 5.1.1 Safe distance to rear vehicle - RV-1
+  RV_1: 'A a1: ((in_front_of(a1,a0) and in_same_lane(a0,a1) and !once[0, 3s](cut_in(a0,a1))) implies keeps_safe_distance_rear(a0,a1))'
+
+  # 5.1.2 Door - RV-2
+  RV_2: not in_standstill(a0) implies not door_open(a0)
+
+
+  # 5.2 Specific Traffic Rules for buses
+  # 5.2.1 Arrival and Departure
+  # A. Speed limit - RB-1
+  RB_1: keeps_lane_speed_limit_with_minmax(a0) and keeps_fov_speed_limit(a0) and keeps_type_speed_limit(a0) and keeps_brake_speed_limit(a0) and keeps_standing_passenger_speed_limit(a0)
+
+  # B. Parking in proper position - RB-2
+  RB_2: in_bus_stop_area(a0) and in_standstill(a0) implies park_in_proper_position(a0)
+
+  # C. Hazard lights - RB-3
+  # RB_3: red_triangle(B) and in_bus_stop_area(a0) and in_standstill(a0) implies hazard_lights_on(a0)
+
+  # 5.2.2 Boarding and Alighting
+  # A. Conditional departure from the bus stop - RB-4
+  # RB_4: dangerous_passenger(B) or (not stop_required(a0) and not passenger_awaiting(B) and t ≥ ETD(a0, B)) implies eventually[0, 5s](not (in_bus_stop_area(a0) and in_standstill(a0)))
+
+  # B. Ramp - RB-5
+  # RB_5: in_bus_stop_area(a0) and in_standstill(a0) and park_in_proper_position(a0) implies eventually[0, 5s](kneeling(a0) and door_open(a0) and (passenger_require_aids(B) implies ramp_extended(a0)))
+
+  # C. Standstill at the bus stop - RB-6
+  # RB_6: in_bus_stop_area(a0) and in_standstill(a0) implies in_standstill(a0) U(t ≥ ETD(a0, B) and not door_open(a0) and not kneeling(a0))
+
+
+  # 5.3 Other rules for Non-Bus vehicles
+  # 5.3.1 Bus priority - RN-1
+  # a0: xego: non_bus a1:bus
+  RN_1: 'A a1: (not vehicle_type(a0, a1) and in_bus_stop_area(a1) and turn_signal_on(a1) and eventually[0, 5s](cut_in(a1,a0) and in_front_of(a1, a0)) implies keeps_safe_distance_prec(a0, a1))'
+
+  # 5.3.2 Dedicated bus lane - RN-2
+  RN_2: 'A a1: (not vehicle_type(a0, a1) and not supplementary_signs(a0) implies not on_bus_lane(a0))'
+
+# Parameters for traffic rules
+###
+# .. code-block:: yaml
+#
+#   - a_abrupt: acceleration difference which indicates abrupt braking
+#   - min_velocity_dif: minimum velocity difference
+#   - standstill_error: velocity deviation from zero which is still classified to be standstill
+#   - num_veh_congestion: minimum number of slow-moving leading vehicles so that a vehicle can be assumed to be part of a congestion
+#   - max_congestion_velocity: maximum velocity of a vehicle withing a congestion
+#   - max_velocity_limit_free_driving:
+#   - desired_interstate_velocity: desired velocity on interstates
+#   - min_interstate_width: minimum interstate width so that emergency lane can be created
+#   - close_to_lane_border:  indicator if vehicle is close to lane border
+#   - slightly_higher_speed_difference:  indicator for slightly higher speed
+#   - u_turn: angle [rad] indicating u-turn
+#   - country: countries where traffic rules are applied
+traffic_rules_param:
+  j_abrupt: -2 # for ego vehicle emergency profile calculation
+  a_abrupt: -2
+  standstill_error: 0.01
+  min_velocity_dif: 15
+  num_veh_congestion: 3
+  max_congestion_velocity: 2.78
+  num_veh_slow_moving_traffic: 3
+  max_slow_moving_traffic_velocity: 8.33
+  num_veh_queue_of_vehicles: 3
+  max_queue_of_vehicles_velocity: 3
+  max_velocity_limit_free_driving: 16.67
+  desired_interstate_velocity: 36.11
+  min_interstate_width: 7.0
+  close_to_lane_border: 0.2
+  close_to_other_vehicle: 0.5
+  slightly_higher_speed_difference: 5.55
+  u_turn: 1.57
+  country: DEU
+  above_centerline_th: 0.1
+  max_interstate_speed_truck: 22.22
+  max_interstate_speed_bus : 15.0
+  d_sl: 1.0
