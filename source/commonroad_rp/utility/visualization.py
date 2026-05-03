@@ -1,61 +1,57 @@
 __author__ = "Gerald Würsching"
 __copyright__ = "TUM Cyber-Physical Systems Group"
-__version__ = "2024.1"
+__version__ = "2025.1"
 __maintainer__ = "Gerald Würsching"
 __email__ = "commonroad@lists.lrz.de"
 __status__ = "Beta"
 
-import logging
 import multiprocessing
-import os
 from copy import deepcopy
-
 # standard imports
-from typing import List, Optional, Tuple, Union
-
-import imageio
+from typing import List, Union, Optional, Tuple
+import os
+import logging
 
 # third party
 import matplotlib.pyplot as plt
 import numpy as np
-from commonroad.geometry.shape import Rectangle
-from commonroad.planning.planning_problem import PlanningProblem
-from commonroad.prediction.prediction import Occupancy
-from commonroad.scenario.obstacle import DynamicObstacle
+import imageio
 
 # commonroad-io
 from commonroad.scenario.scenario import Scenario
+from commonroad.scenario.obstacle import DynamicObstacle
 from commonroad.scenario.state import CustomState
-from commonroad.scenario.trajectory import Trajectory
+from commonroad.planning.planning_problem import PlanningProblem
 from commonroad.visualization.draw_params import OccupancyParams
-from commonroad.visualization.mp_renderer import (
-    DynamicObstacleParams,
-    MPRenderer,
-    ShapeParams,
-)
+from commonroad.visualization.mp_renderer import MPRenderer, DynamicObstacleParams, ShapeParams
+from commonroad.geometry.shape import Rectangle
+from commonroad.prediction.prediction import Occupancy
 
 # commonroad_dc
 from commonroad_dc import pycrcc
 
 # commonroad-rp
-from source.commonroad_rp.trajectories import FeasibilityStatus, TrajectorySample
-from source.commonroad_rp.utility.config import ReactivePlannerConfiguration
+from commonroad_rp.trajectories import TrajectorySample, FeasibilityStatus
+from commonroad_rp.utility.config import ReactivePlannerConfiguration
+
 
 logger = logging.getLogger("RP_LOGGER")
-logging.getLogger("PIL").setLevel(logging.ERROR)
-logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+logging.getLogger('PIL').setLevel(logging.ERROR)
+logging.getLogger('matplotlib.font_manager').setLevel(logging.ERROR)
 
 # color dict of trajectories
 _dict_traj_status_to_color = {
-    FeasibilityStatus.FEASIBLE.name: "blue",
-    FeasibilityStatus.INFEASIBLE_KINEMATIC.name: "blue",
-    FeasibilityStatus.INFEASIBLE_COLLISION.name: "red",
-    FeasibilityStatus.INFEASIBLE_RULE.name: "red",
+    FeasibilityStatus.FEASIBLE.name: 'blue',
+    FeasibilityStatus.INFEASIBLE_KINEMATIC.name: 'blue',
+    FeasibilityStatus.INFEASIBLE_COLLISION.name: 'red',
+    FeasibilityStatus.INFEASIBLE_RULE.name: 'red'
 }
 
 
 def visualize_scenario_and_pp(
-    scenario: Scenario, planning_problem: PlanningProblem, cosy=None
+        scenario: Scenario,
+        planning_problem: PlanningProblem,
+        cosy=None
 ) -> None:
     """Visualizes scenario, planning problem and (optionally) the reference path"""
     plot_limits = None
@@ -75,29 +71,16 @@ def visualize_scenario_and_pp(
     planning_problem.draw(rnd)
     rnd.render()
     if ref_path is not None:
-        rnd.ax.plot(
-            ref_path[:, 0],
-            ref_path[:, 1],
-            color="g",
-            marker=".",
-            markersize=1,
-            zorder=100,
-            linewidth=0.8,
-            label="reference path",
-        )
+        rnd.ax.plot(ref_path[:, 0], ref_path[:, 1], color='g', marker='.', markersize=1, zorder=100,
+                    linewidth=0.8, label='reference path')
         proj_domain_border = np.array(cosy.ccosy.projection_domain())
-        rnd.ax.plot(
-            proj_domain_border[:, 0],
-            proj_domain_border[:, 1],
-            color="orange",
-            linewidth=0.8,
-            zorder=100,
-        )
+        rnd.ax.plot(proj_domain_border[:, 0], proj_domain_border[:, 1], color="orange", linewidth=0.8, zorder=100)
     plt.show(block=True)
 
 
 def visualize_collision_checker(
-    scenario: Scenario, cc: pycrcc.CollisionChecker
+        scenario: Scenario,
+        cc: pycrcc.CollisionChecker
 ) -> None:
     """
     Visualizes the collision checker, i.e., all collision objects and, if applicable, the road boundary.
@@ -111,15 +94,15 @@ def visualize_collision_checker(
 
 
 def visualize_planner_at_timestep(
-    scenario: Scenario,
-    planning_problem: PlanningProblem,
-    ego: DynamicObstacle,
-    timestep: int,
-    config: ReactivePlannerConfiguration,
-    traj_set: List[TrajectorySample] = None,
-    ref_path: np.ndarray = None,
-    rnd: MPRenderer = None,
-    plot_limits: Union[List[Union[int, float]], None] = None,
+        scenario: Scenario,
+        planning_problem: PlanningProblem,
+        ego: DynamicObstacle,
+        timestep: int,
+        config: ReactivePlannerConfiguration,
+        traj_set: List[TrajectorySample] = None,
+        ref_path: np.ndarray = None,
+        rnd: MPRenderer = None,
+        plot_limits: Union[List[Union[int, float]], None] = None
 ) -> None:
     """
     Function to visualize planning result from the reactive planner for a given time step
@@ -175,168 +158,21 @@ def visualize_planner_at_timestep(
 
     # visualize optimal trajectory
     pos = np.asarray([state.position for state in ego.prediction.trajectory.state_list])
-    rnd.ax.plot(
-        pos[:, 0],
-        pos[:, 1],
-        color="k",
-        marker="x",
-        markersize=2.5,
-        zorder=21,
-        linewidth=2.0,
-        label="optimal trajectory",
-    )
+    rnd.ax.plot(pos[:, 0], pos[:, 1], color='k', marker='x', markersize=2.5, zorder=21, linewidth=2.0,
+                label='optimal trajectory')
 
     # visualize sampled trajectory bundle
     step = 1  # draw every trajectory (step=2 would draw every second trajectory)
     if traj_set is not None:
         for i in range(0, len(traj_set), step):
             color = _dict_traj_status_to_color[traj_set[i].feasibility_label.name]
-            plt.plot(
-                traj_set[i].cartesian.x,
-                traj_set[i].cartesian.y,
-                color=color,
-                zorder=20,
-                linewidth=0.1,
-                alpha=1.0,
-            )
+            plt.plot(traj_set[i].cartesian.x, traj_set[i].cartesian.y,
+                     color=color, zorder=20, linewidth=0.1, alpha=1.0)
 
     # visualize reference path
     if ref_path is not None and config.debug.draw_ref_path:
-        rnd.ax.plot(
-            ref_path[:, 0],
-            ref_path[:, 1],
-            color="g",
-            marker=".",
-            markersize=1,
-            zorder=19,
-            linewidth=1.8,
-            label="reference path",
-        )
-
-    plt.xlabel("x [m]", fontsize=22)
-    plt.ylabel("y [m]", fontsize=22)
-    plt.xticks(fontsize=22)
-    plt.yticks(fontsize=22)
-    rnd.ax.axis('off')
-
-    # save as image
-    # if config.debug.save_plots:
-    #     os.makedirs(
-    #         os.path.join(config.general.path_output, str(scenario.scenario_id)),
-    #         exist_ok=True,
-    #     )
-    #     plot_dir = os.path.join(config.general.path_output, str(scenario.scenario_id))
-    #     plt.savefig(
-    #         f"{plot_dir}/{scenario.scenario_id}_{timestep}.{config.debug.plots_file_format}",
-    #         format=config.debug.plots_file_format,
-    #         dpi=300,
-    #         bbox_inches="tight",
-    #     )
-
-    if config.debug.save_plots:
-        filename = f"{scenario.scenario_id}_{timestep}.{config.debug.plots_file_format}"
-        plt.savefig(
-            filename,
-            format=config.debug.plots_file_format,
-            dpi=300,
-            bbox_inches="tight",
-        )
-
-    # show plot
-    if config.debug.show_plots:
-        plt.show(block=True)
-
-
-def visualize_planner_at_all_timestep(
-    scenario: Scenario,
-    planning_problem: PlanningProblem,
-    timestep: int,
-    config: ReactivePlannerConfiguration,
-    traj_set: List[TrajectorySample] = None,
-    ref_path: np.ndarray = None,
-    rnd: MPRenderer = None,
-    plot_limits: Union[List[Union[int, float]], None] = None,
-) -> None:
-    """
-    Function to visualize planning result from the reactive planner for a given time step
-    :param scenario: CommonRoad scenario object
-    :param planning_problem CommonRoad Planning problem object
-    :param ego: Ego vehicle as CommonRoad DynamicObstacle object
-    :param timestep: current time step of scenario to plot
-    :param config: Configuration object for plot/save settings
-    :param traj_set: List of sampled trajectories (optional)
-    :param ref_path: Reference path for planner as polyline [(nx2) np.ndarray] (optional)
-    :param rnd: MPRenderer object (optional: if none is passed, the function creates a new renderer object; otherwise it
-    will visualize on the existing object)
-    :param plot_limits: x, y-axis limits for plotting
-    """
-    # get plot limits from ref path
-    if plot_limits is None and ref_path is not None:
-        x_min = np.min(ref_path[:, 0]) - 20
-        x_max = np.max(ref_path[:, 0]) + 20
-        y_min = np.min(ref_path[:, 1]) - 20
-        y_max = np.max(ref_path[:, 1]) + 20
-        plot_limits = [x_min, x_max, y_min, y_max]
-
-    # create renderer object (if no existing renderer is passed)
-    if rnd is None:
-        rnd = MPRenderer(figsize=(20, 10), plot_limits=plot_limits)
-    else:
-        rnd.plot_limits = plot_limits
-
-    # set renderer draw params
-    rnd.draw_params.time_begin = timestep
-    rnd.draw_params.dynamic_obstacle.draw_icon = config.debug.draw_icons
-    rnd.draw_params.dynamic_obstacle.trajectory.draw_trajectory = False
-    rnd.draw_params.planning_problem.initial_state.state.draw_arrow = False
-    rnd.draw_params.planning_problem.initial_state.state.radius = 0.5
-
-    # set ego vehicle draw params
-    ego_params = DynamicObstacleParams()
-    ego_params.time_begin = timestep
-    ego_params.time_end = 1000
-    ego_params.draw_icon = config.debug.draw_icons
-    ego_params.vehicle_shape.occupancy.shape.facecolor = "#E37222"
-    ego_params.vehicle_shape.occupancy.shape.edgecolor = "#9C4100"
-    ego_params.vehicle_shape.occupancy.shape.zorder = 50
-    ego_params.vehicle_shape.occupancy.shape.opacity = 1
-    ego_params.trajectory.draw_trajectory = False
-
-    # visualize scenario, planning problem, ego vehicle
-    scenario.draw(rnd)
-    if config.debug.draw_planning_problem:
-        planning_problem.draw(rnd)
-
-    rnd.render()
-
-    # visualize optimal trajectory
-
-    # visualize sampled trajectory bundle
-    step = 1  # draw every trajectory (step=2 would draw every second trajectory)
-    if traj_set is not None:
-        for i in range(0, len(traj_set), step):
-            color = _dict_traj_status_to_color[traj_set[i].feasibility_label.name]
-            plt.plot(
-                traj_set[i].cartesian.x,
-                traj_set[i].cartesian.y,
-                color=color,
-                zorder=100,
-                linewidth=0.1,
-                alpha=1.0,
-            )
-
-    # visualize reference path
-    if ref_path is not None and config.debug.draw_ref_path:
-        rnd.ax.plot(
-            ref_path[:, 0],
-            ref_path[:, 1],
-            color="g",
-            marker=".",
-            markersize=1,
-            zorder=19,
-            linewidth=1.8,
-            label="reference path",
-        )
+        rnd.ax.plot(ref_path[:, 0], ref_path[:, 1], color='g', marker='.', markersize=1, zorder=19, linewidth=1.8,
+                    label='reference path')
 
     plt.xlabel("x [m]", fontsize=22)
     plt.ylabel("y [m]", fontsize=22)
@@ -345,179 +181,12 @@ def visualize_planner_at_all_timestep(
 
     # save as image
     if config.debug.save_plots:
-        os.makedirs(
-            os.path.join(config.general.path_output, str(scenario.scenario_id)),
-            exist_ok=True,
-        )
+        os.makedirs(os.path.join(config.general.path_output, str(scenario.scenario_id)),
+                    exist_ok=True)
         plot_dir = os.path.join(config.general.path_output, str(scenario.scenario_id))
-        plt.savefig(
-            f"{plot_dir}/{scenario.scenario_id}_{timestep}.{config.debug.plots_file_format}",
-            format=config.debug.plots_file_format,
-            dpi=300,
-            bbox_inches="tight",
-        )
-
-    # show plot
-    if config.debug.show_plots:
-        plt.show(block=True)
-
-
-def visualize_planner_at_timestep_post_and_original(
-    scenario: Scenario,
-    planning_problem: PlanningProblem,
-    ego: DynamicObstacle,
-    ego1: DynamicObstacle,
-    timestep: int,
-    config: ReactivePlannerConfiguration,
-    traj_set: List[TrajectorySample] = None,
-    ref_path: np.ndarray = None,
-    rnd: MPRenderer = None,
-    plot_limits: Union[List[Union[int, float]], None] = None,
-) -> None:
-    """
-    Function to visualize planning result from the reactive planner for a given time step
-    :param scenario: CommonRoad scenario object
-    :param planning_problem CommonRoad Planning problem object
-    :param ego: Ego vehicle as CommonRoad DynamicObstacle object
-    :param timestep: current time step of scenario to plot
-    :param config: Configuration object for plot/save settings
-    :param traj_set: List of sampled trajectories (optional)
-    :param ref_path: Reference path for planner as polyline [(nx2) np.ndarray] (optional)
-    :param rnd: MPRenderer object (optional: if none is passed, the function creates a new renderer object; otherwise it
-    will visualize on the existing object)
-    :param plot_limits: x, y-axis limits for plotting
-    """
-    # get plot limits from ref path
-    if plot_limits is None and ref_path is not None:
-        x_min = np.min(ref_path[:, 0]) - 20
-        x_max = np.max(ref_path[:, 0]) + 20
-        y_min = np.min(ref_path[:, 1]) - 20
-        y_max = np.max(ref_path[:, 1]) + 20
-        plot_limits = [x_min, x_max, y_min, y_max]
-
-    # create renderer object (if no existing renderer is passed)
-    if rnd is None:
-        rnd = MPRenderer(figsize=(20, 10), plot_limits=plot_limits)
-    else:
-        rnd.plot_limits = plot_limits
-
-    # set renderer draw params
-    rnd.draw_params.time_begin = timestep
-    rnd.draw_params.dynamic_obstacle.draw_icon = config.debug.draw_icons
-    rnd.draw_params.dynamic_obstacle.trajectory.draw_trajectory = False
-    rnd.draw_params.planning_problem.initial_state.state.draw_arrow = False
-    rnd.draw_params.planning_problem.initial_state.state.radius = 0.5
-
-    # set ego vehicle draw params
-    ego_params = DynamicObstacleParams()
-    ego_params.time_begin = timestep
-    ego_params.time_end = 1000
-    ego_params.draw_icon = config.debug.draw_icons
-    ego_params.vehicle_shape.occupancy.shape.facecolor = "#E37222"
-    ego_params.vehicle_shape.occupancy.shape.edgecolor = "#9C4100"
-    ego_params.vehicle_shape.occupancy.shape.zorder = 50
-    ego_params.vehicle_shape.occupancy.shape.opacity = 1
-    ego_params.trajectory.draw_trajectory = False
-
-    # set ego vehicle draw params
-    ego1_params = DynamicObstacleParams()
-    ego1_params.time_begin = timestep
-    ego1_params.time_end = 1000
-    ego1_params.draw_icon = config.debug.draw_icons
-    ego1_params.vehicle_shape.occupancy.shape.facecolor = "#E37222"
-    ego1_params.vehicle_shape.occupancy.shape.edgecolor = "#9C4100"
-    ego1_params.vehicle_shape.occupancy.shape.zorder = 50
-    ego1_params.vehicle_shape.occupancy.shape.opacity = 1
-    ego1_params.trajectory.draw_trajectory = False
-    # visualize scenario, planning problem, ego vehicle
-    scenario.draw(rnd)
-    if config.debug.draw_planning_problem:
-        planning_problem.draw(rnd)
-    ego.draw(rnd, draw_params=ego_params)
-    ego1.draw(rnd, draw_params=ego1_params)
-    rnd.render()
-
-    # visualize optimal trajectory
-    pos = np.asarray([state.position for state in ego.prediction.trajectory.state_list])
-    rnd.ax.plot(
-        pos[:, 0],
-        pos[:, 1],
-        color="k",
-        marker="x",
-        markersize=2.5,
-        zorder=21,
-        linewidth=2.0,
-        label="optimal trajectory",
-    )
-    pos1 = np.asarray(
-        [state.position for state in ego1.prediction.trajectory.state_list]
-    )
-    rnd.ax.plot(
-        pos1[:, 0],
-        pos1[:, 1],
-        color="yellow",
-        marker="x",
-        markersize=2.5,
-        zorder=21,
-        linewidth=2.0,
-        label="optimal trajectory",
-    )
-
-    # visualize sampled trajectory bundle
-    step = 1  # draw every trajectory (step=2 would draw every second trajectory)
-    if traj_set is not None:
-        for i in range(0, len(traj_set), step):
-            color = _dict_traj_status_to_color[traj_set[i].feasibility_label.name]
-            plt.plot(
-                traj_set[i].cartesian.x,
-                traj_set[i].cartesian.y,
-                color=color,
-                zorder=20,
-                linewidth=0.1,
-                alpha=1.0,
-            )
-
-    # visualize reference path
-    if ref_path is not None and config.debug.draw_ref_path:
-        rnd.ax.plot(
-            ref_path[:, 0],
-            ref_path[:, 1],
-            color="g",
-            marker=".",
-            markersize=1,
-            zorder=19,
-            linewidth=1.8,
-            label="reference path",
-        )
-
-    plt.xlabel("x [m]", fontsize=22)
-    plt.ylabel("y [m]", fontsize=22)
-    plt.xticks(fontsize=22)
-    plt.yticks(fontsize=22)
-    rnd.ax.axis('off')
-
-    # save as image
-    # if config.debug.save_plots:
-    #     os.makedirs(
-    #         os.path.join(config.general.path_output, str(scenario.scenario_id)),
-    #         exist_ok=True,
-    #     )
-    #     plot_dir = os.path.join(config.general.path_output, str(scenario.scenario_id))
-    #     plt.savefig(
-    #         f"{plot_dir}/{scenario.scenario_id}_{timestep}.{config.debug.plots_file_format}",
-    #         format=config.debug.plots_file_format,
-    #         dpi=300,
-    #         bbox_inches="tight",
-    #     )
-    # 在所有保存图片的地方替换为下面这段
-    if config.debug.save_plots:
-        filename = f"{scenario.scenario_id}_{timestep}.{config.debug.plots_file_format}"
-        plt.savefig(
-            filename,
-            format=config.debug.plots_file_format,
-            dpi=300,
-            bbox_inches="tight",
-        )
+        plt.savefig(f"{plot_dir}/{scenario.scenario_id}_{timestep}.{config.debug.plots_file_format}",
+                    format=config.debug.plots_file_format, dpi=300,
+                    bbox_inches='tight')
 
     # show plot
     if config.debug.show_plots:
@@ -525,15 +194,15 @@ def visualize_planner_at_timestep_post_and_original(
 
 
 def plot_final_trajectory(
-    scenario: Scenario,
-    planning_problem: PlanningProblem,
-    state_list: List[CustomState],
-    config: ReactivePlannerConfiguration,
-    ref_path: np.ndarray = None,
-    plot_limits: Optional[List[Union[int, float]]] = None,
-    ego_vehicle: Optional[DynamicObstacle] = None,
-    time_step: int = 0,
-    rnd: Optional[MPRenderer] = None,
+        scenario: Scenario,
+        planning_problem: PlanningProblem,
+        state_list: List[CustomState],
+        config: ReactivePlannerConfiguration,
+        ref_path: np.ndarray = None,
+        plot_limits: Optional[List[Union[int, float]]] = None,
+        ego_vehicle: Optional[DynamicObstacle] = None,
+        time_step: int = 0,
+        rnd: Optional[MPRenderer] = None
 ) -> None:
     """
     Function plots occupancies for a given CommonRoad trajectory (of the ego vehicle)
@@ -572,8 +241,8 @@ def plot_final_trajectory(
 
     # set ego trajectory occupancy shape params
     occ_params = OccupancyParams()
-    occ_params.shape.facecolor = "#E37222"
-    occ_params.shape.edgecolor = "#9C4100"
+    occ_params.shape.facecolor = '#E37222'
+    occ_params.shape.edgecolor = '#9C4100'
     occ_params.shape.opacity = 0.2
     occ_params.shape.zorder = 20
 
@@ -595,10 +264,7 @@ def plot_final_trajectory(
     # visualize ego trajectory occupancies
     if ego_vehicle is not None:
         # draw occupancies of ego vehicle trajectory
-        [
-            occ.draw(rnd, draw_params=occ_params)
-            for occ in ego_vehicle.prediction.occupancy_set
-        ]
+        [occ.draw(rnd, draw_params=occ_params) for occ in ego_vehicle.prediction.occupancy_set]
 
         # visualize ego vehicle at specified time step
         ego_vehicle.draw(rnd, draw_params=ego_params)
@@ -611,7 +277,7 @@ def plot_final_trajectory(
                 length=config.vehicle.length,
                 width=config.vehicle.width,
                 center=state.position,
-                orientation=state.orientation,
+                orientation=state.orientation
             )
             occ = Occupancy(time_step=i, shape=shape_rect)
 
@@ -637,56 +303,34 @@ def plot_final_trajectory(
 
     # visualize ego trajectory states
     pos = np.asarray([state.position for state in state_list])
-    rnd.ax.plot(
-        pos[:, 0],
-        pos[:, 1],
-        color="#9C4100",
-        marker="x",
-        markersize=3.0,
-        markeredgewidth=0.4,
-        zorder=21,
-        linewidth=4.0,
-    )
+    rnd.ax.plot(pos[:, 0], pos[:, 1], color='#9C4100', marker='x', markersize=3.0, markeredgewidth=0.4, zorder=21,
+                linewidth=4.0)
 
     # visualize reference path
     if ref_path is not None and config.debug.draw_ref_path:
-        rnd.ax.plot(
-            ref_path[:, 0],
-            ref_path[:, 1],
-            color="g",
-            marker=".",
-            markersize=1,
-            zorder=19,
-            linewidth=0.8,
-            label="reference path",
-        )
+        rnd.ax.plot(ref_path[:, 0], ref_path[:, 1], color='g', marker='.', markersize=1, zorder=19, linewidth=0.8,
+                    label='reference path')
 
     # save as image
     if config.debug.save_plots:
-        os.makedirs(
-            os.path.join(config.general.path_output, str(scenario.scenario_id)),
-            exist_ok=True,
-        )
+        os.makedirs(os.path.join(config.general.path_output, str(scenario.scenario_id)),
+                    exist_ok=True)
         plot_dir = os.path.join(config.general.path_output, str(scenario.scenario_id))
         plt.savefig(
             f"{plot_dir}/{scenario.scenario_id}_final_trajectory.{config.debug.plots_file_format}",
             format=config.debug.plots_file_format,
             dpi=300,
-            bbox_inches="tight",
+            bbox_inches='tight'
         )
 
     # show plot
-    plt.xlabel("x [m]")
-    plt.ylabel("y [m]")
+    plt.xlabel('x [m]')
+    plt.ylabel('y [m]')
     if config.debug.show_plots:
         plt.show(block=True)
 
 
-def make_gif(
-    config: ReactivePlannerConfiguration,
-    time_steps: Union[range, List[int]],
-    duration: float = 0.1,
-):
+def make_gif(config: ReactivePlannerConfiguration, time_steps: Union[range, List[int]], duration: float = 0.1):
     """
     Function to create GIF from single images of planning results at each time step
     Images are saved in output path specified in config.general.path_output
@@ -710,20 +354,14 @@ def make_gif(
         path_images = os.path.join(config.general.path_output, str(scenario_id))
 
         for step in time_steps:
-            im_path = os.path.join(
-                path_images,
-                str(scenario_id) + f"_{step}.{config.debug.plots_file_format}",
-            )
+            im_path = os.path.join(path_images, str(scenario_id) + f"_{step}.{config.debug.plots_file_format}")
             filenames.append(im_path)
 
         for filename in filenames:
             images.append(imageio.v2.imread(filename))
 
-        imageio.mimsave(
-            os.path.join(config.general.path_output, str(scenario_id) + ".gif"),
-            images,
-            duration=duration,
-        )
+        imageio.mimsave(os.path.join(config.general.path_output, str(scenario_id) + ".gif"),
+                        images, duration=duration)
 
 
 def worker(task_queue):
@@ -747,11 +385,11 @@ def visualize(task):
     """
     # get plot limits from ref path
     if task.plot_limits is None and task.ref_path is not None:
-        x_min = np.min(task.ref_path[:, 0]) - 20
-        x_max = np.max(task.ref_path[:, 0]) + 20
-        y_min = np.min(task.ref_path[:, 1]) - 20
-        y_max = np.max(task.ref_path[:, 1]) + 20
-        plot_limits = [x_min, x_max, y_min, y_max]
+         x_min = np.min(task.ref_path[:, 0]) - 20
+         x_max = np.max(task.ref_path[:, 0]) + 20
+         y_min = np.min(task.ref_path[:, 1]) - 20
+         y_max = np.max(task.ref_path[:, 1]) + 20
+         plot_limits = [x_min, x_max, y_min, y_max]
 
     # create renderer object (if no existing renderer is passed)
     if task.rnd is None:
@@ -781,46 +419,23 @@ def visualize(task):
     task.rnd.render()
 
     # visualize optimal trajectory
-    pos = np.asarray(
-        [state.position for state in task.ego_vehicle.prediction.trajectory.state_list]
-    )
-    task.rnd.ax.plot(
-        pos[:, 0],
-        pos[:, 1],
-        color="k",
-        marker="x",
-        markersize=1.5,
-        zorder=21,
-        linewidth=1.5,
-        label="optimal trajectory",
-    )
+    pos = np.asarray([state.position for state in task.ego_vehicle.prediction.trajectory.state_list])
+    task.rnd.ax.plot(pos[:, 0], pos[:, 1], color='k', marker='x', markersize=1.5, zorder=21, linewidth=1.5,
+                     label='optimal trajectory')
 
     # visualize sampled trajectory bundle
     step = 1  # draw every trajectory (step=2 would draw every second trajectory)
     if task.traj_set is not None:
         for i in range(0, len(task.traj_set), step):
             color = _dict_traj_status_to_color[task.traj_set[i].feasibility_label.name]
-            plt.plot(
-                task.traj_set[i].cartesian.x,
-                task.traj_set[i].cartesian.y,
-                color=color,
-                zorder=20,
-                linewidth=0.1,
-                alpha=1.0,
-            )
+            plt.plot(task.traj_set[i].cartesian.x, task.traj_set[i].cartesian.y,
+                     color=color, zorder=20, linewidth=0.1, alpha=1.0)
 
     # visualize reference path
     if task.ref_path is not None and task.draw_ref_path:
-        task.rnd.ax.plot(
-            task.ref_path[:, 0],
-            task.ref_path[:, 1],
-            color="g",
-            marker=".",
-            markersize=1,
-            zorder=19,
-            linewidth=1.8,
-            label="reference path",
-        )
+        task.rnd.ax.plot(task.ref_path[:, 0], task.ref_path[:, 1], color='g', marker='.', markersize=1, zorder=19,
+                         linewidth=1.8,
+                         label='reference path')
 
     plt.xlabel("x [m]", fontsize=22)
     plt.ylabel("y [m]", fontsize=22)
@@ -829,42 +444,27 @@ def visualize(task):
 
     # save as image file
     if task.save_plots:
-        os.makedirs(
-            os.path.join(task.path_output, str(task.scenario.scenario_id)),
-            exist_ok=True,
-        )
+        os.makedirs(os.path.join(task.path_output, str(task.scenario.scenario_id)),
+                    exist_ok=True)
         plot_dir = os.path.join(task.path_output, str(task.scenario.scenario_id))
-        plt.savefig(
-            f"{plot_dir}/{task.scenario.scenario_id}_{task.timestep}.{task.file_format}",
-            format=task.file_format,
-            dpi=300,
-            bbox_inches="tight",
-        )
+        plt.savefig(f"{plot_dir}/{task.scenario.scenario_id}_{task.timestep}.{task.file_format}",
+                    format=task.file_format, dpi=300,
+                    bbox_inches='tight')
 
     # show plot
     if task.show_plots:
         plt.show(block=True)
 
-
 class VisualizationTask:
     """
     Class to collect all relevant info to visualize planning result from the reactive planner for a given time step
     """
-
-    def __init__(
-        self,
-        scenario: Scenario,
-        planning_problem: PlanningProblem,
-        ego: DynamicObstacle,
-        timestep: int,
-        config: ReactivePlannerConfiguration,
-        traj_set: List[TrajectorySample] = None,
-        monitor_set: Tuple[List[TrajectorySample], List[bool]] = None,
-        ref_path: np.ndarray = None,
-        rnd: MPRenderer = None,
-        plot_limits: Union[List[Union[int, float]], None] = None,
-        medium_goal: np.ndarray = None,
-    ):
+    def __init__(self, scenario: Scenario, planning_problem: PlanningProblem, ego: DynamicObstacle,
+                                  timestep: int, config: ReactivePlannerConfiguration, traj_set: List[TrajectorySample] = None,
+                                  monitor_set: Tuple[List[TrajectorySample], List[bool]] = None,
+                                  ref_path: np.ndarray = None, rnd: MPRenderer = None,
+                                  plot_limits: Union[List[Union[int, float]], None] = None,
+                                  medium_goal: np.ndarray = None):
         self.scenario = deepcopy(scenario)
         self.planning_problem = deepcopy(planning_problem)
         self.ego_vehicle = deepcopy(ego)
@@ -885,7 +485,6 @@ class VisualizationTask:
         self.show_plots = config.debug.show_plots
         self.file_format = config.debug.plots_file_format
 
-
 class VisualizationHandler:
     """
     Clss responsible for handling (multiprocessing) all visualization tasks
@@ -895,27 +494,18 @@ class VisualizationHandler:
         self.task_queue = multiprocessing.Queue(maxsize=config.debug.max_queue_size)
         self.num_workers = config.debug.num_workers_viz
         if self.num_workers < 0:
-            raise ValueError(
-                "num_workers_viz must be greater than -1. Choose a value greater than 0 to activate multiprocessing"
-            )
+            raise ValueError('num_workers_viz must be greater than -1. Choose a value greater than 0 to activate multiprocessing')
         self.workers = []
         for i in range(self.num_workers):
             p = multiprocessing.Process(target=worker, args=(self.task_queue,))
             p.start()
             self.workers.append(p)
 
-    def add_task(
-        self,
-        scenario: Scenario,
-        planning_problem: PlanningProblem,
-        ego_vehicle: DynamicObstacle,
-        traj_set: List[TrajectorySample],
-        ref_path: np.ndarray,
-        timestep: int,
-        config: ReactivePlannerConfiguration,
-        medium_goal: np.ndarray = None,
-        monitor_set: Tuple[List[TrajectorySample], List[bool]] = None,
-    ):
+    def add_task(self, scenario: Scenario, planning_problem: PlanningProblem,
+                 ego_vehicle: DynamicObstacle, traj_set: List[TrajectorySample],
+                 ref_path: np.ndarray, timestep: int,
+                 config: ReactivePlannerConfiguration, medium_goal: np.ndarray = None,
+                 monitor_set: Tuple[List[TrajectorySample], List[bool]] = None):
         """
         add a task to the queue for visualization
 
@@ -930,32 +520,26 @@ class VisualizationHandler:
         :param medium_goal: ndarray
         """
         if self.num_workers != 0:
-            task = VisualizationTask(
-                scenario=scenario,
-                planning_problem=planning_problem,
-                ego=ego_vehicle,
-                timestep=timestep,
-                config=config,
-                traj_set=traj_set,
-                monitor_set=monitor_set,
-                ref_path=ref_path,
-                medium_goal=medium_goal,
-            )
+            task = VisualizationTask(scenario=scenario,
+                                     planning_problem=planning_problem,
+                                     ego=ego_vehicle,
+                                     timestep=timestep,
+                                     config=config,
+                                     traj_set=traj_set,
+                                     monitor_set=monitor_set,
+                                     ref_path=ref_path,
+                                     medium_goal=medium_goal)
             self.task_queue.put(task, block=False)
         else:
-            visualize(
-                VisualizationTask(
-                    scenario=scenario,
-                    planning_problem=planning_problem,
-                    ego=ego_vehicle,
-                    timestep=timestep,
-                    config=config,
-                    traj_set=traj_set,
-                    monitor_set=monitor_set,
-                    ref_path=ref_path,
-                    medium_goal=medium_goal,
-                )
-            )
+            visualize(VisualizationTask(scenario=scenario,
+                                     planning_problem=planning_problem,
+                                     ego=ego_vehicle,
+                                     timestep=timestep,
+                                     config=config,
+                                     traj_set=traj_set,
+                                     monitor_set=monitor_set,
+                                     ref_path=ref_path,
+                                     medium_goal=medium_goal))
 
     def __del__(self):
         for i in range(self.num_workers):
@@ -963,272 +547,3 @@ class VisualizationHandler:
 
         for p in self.workers:
             p.join()
-
-
-def plot_ksstate_trajectory_all_nach(trajectory: Trajectory):
-    # time steps
-    k = np.arange(1, len(trajectory.state_list) + 1)
-    dt = 0.1
-
-    # State parameter
-    x_positions = np.array([state.position[0] for state in trajectory.state_list])
-    y_positions = np.array([state.position[1] for state in trajectory.state_list])
-    velocities = np.array([state.velocity for state in trajectory.state_list])
-    orientations = np.array([state.orientation for state in trajectory.state_list])
-    deltas = np.array([state.steering_angle for state in trajectory.state_list])
-
-    # Acceleration
-    acc_diff = np.diff(velocities) / dt
-    accelerations = np.zeros(len(velocities))
-    accelerations[1:] = acc_diff
-
-    # Jerk
-    jerk_diff = np.diff(accelerations) / dt
-    jerks = np.zeros(len(velocities))
-    jerks[1:] = jerk_diff
-
-    # orientation rate
-    orientation_rate_diff = np.diff(orientations) / dt
-    orientation_rates = np.zeros(len(velocities))
-    orientation_rates[1:] = orientation_rate_diff
-
-    # steering_rate rate
-    steering_rate_diff = np.diff(deltas) / dt
-    steering_rates = np.zeros(len(velocities))
-    steering_rates[1:] = steering_rate_diff
-
-    # route(x,y)
-    plt.figure(figsize=(12, 8))
-    plt.subplot(8, 1, 1)
-    plt.plot(x_positions, y_positions, "b-", label="Trajectory Path")
-    plt.scatter(x_positions, y_positions, color="blue", s=10)
-    plt.xlabel(r"$x$", fontsize=16)
-    plt.ylabel(r"$y$", fontsize=16)
-    plt.title("Position (x, y) Trajectory Path")
-    plt.grid(False)
-    plt.legend()
-
-    # plot velocity
-    plt.subplot(8, 1, 2)
-    plt.plot(k, velocities, "g")
-    plt.ylabel(r"$v$", fontsize=16)
-    plt.title("Velocity over Time Steps")
-    plt.ylim([0, 6])
-    plt.grid(False)
-
-    # plot acceleration
-    plt.subplot(8, 1, 3)
-    plt.plot(k, accelerations, "r")
-    plt.ylabel(r"$a$", fontsize=16)
-    plt.title("Acceleration over Time Steps")
-    plt.grid(False)
-
-    # plot jerk
-    plt.subplot(8, 1, 4)
-    plt.plot(k, jerks, "m")
-    plt.ylabel(r"jerk", fontsize=16)
-    plt.title("Jerk over Time Steps")
-    plt.grid(False)
-
-    # plot orientation
-    plt.subplot(8, 1, 5)
-    plt.plot(k, orientations, "purple")
-    plt.ylabel(r"$\Psi$", fontsize=16)
-    plt.title("Orientation over Time Steps")
-    plt.grid(False)
-
-    # plot orientation rate
-    plt.subplot(8, 1, 6)
-    plt.plot(k, orientation_rates, "c")
-    plt.ylabel(r"$\dot{\Psi}$", fontsize=16)
-    plt.title("Orientation Rate over Time Steps")
-    plt.grid(False)
-
-    # plot steering angle
-    plt.subplot(8, 1, 7)
-    plt.plot(k, deltas, "orange")
-    plt.ylabel(r"$\delta$", fontsize=16)
-    plt.title("Steering Angle over Time Steps")
-    plt.grid(False)
-
-    # plot steering angle rate
-    plt.subplot(8, 1, 8)
-    plt.plot(k, steering_rates, "g")
-    plt.ylabel(r"$\dot{\delta}$", fontsize=16)
-    plt.xlabel(r"Time step (k)", fontsize=16)
-    plt.title("Steering Rate over Time Steps")
-    plt.grid(False)
-
-    plt.tight_layout()
-    plt.savefig("trajectory_analysis_nach.png")
-    plt.close()
-
-
-def plot_ksstate_trajectory(trajectory, filename: str):
-    # Set Seaborn style for better aesthetics
-    # sns.set(style="whitegrid")
-
-    # Set global font sizes
-    plt.rcParams.update(
-        {
-            "font.size": 14,
-            "axes.titlesize": 16,
-            "axes.labelsize": 14,
-            "legend.fontsize": 12,
-            "xtick.labelsize": 12,
-            "ytick.labelsize": 12,
-        }
-    )
-
-    # Time steps
-    k = np.arange(1, len(trajectory.state_list) + 1)
-    dt = 0.1  # Time step duration
-
-    # Extract parameters from each state
-    x_positions = np.array([state.position[0] for state in trajectory.state_list])
-    y_positions = np.array([state.position[1] for state in trajectory.state_list])
-    velocities = np.array([state.velocity for state in trajectory.state_list])
-    orientations = np.array([state.orientation for state in trajectory.state_list])
-    deltas = np.array([state.steering_angle for state in trajectory.state_list])
-
-    # Calculate acceleration and prepend the first element as 0
-    accelerations = np.zeros(len(velocities))
-    accelerations[1:] = np.diff(velocities) / dt
-
-    # Calculate jerk and prepend the first element as 0
-    jerks = np.zeros(len(velocities))
-    jerks[1:] = np.diff(accelerations) / dt
-
-    # Calculate orientation rate of change
-    orientation_rates = np.zeros(len(orientations))
-    orientation_rates[1:] = np.diff(orientations) / dt
-
-    # Calculate steering rate of change
-    steering_rates = np.zeros(len(deltas))
-    steering_rates[1:] = np.diff(deltas) / dt
-
-    # Create 8 subplots arranged in 2 columns and 4 rows
-    fig, axs = plt.subplots(4, 2, figsize=(18, 24), constrained_layout=True)
-
-    # Flatten the axs array for easy indexing
-    axs = axs.flatten()
-
-    # Define a list of plot configurations
-    plot_configs = [
-        {
-            "plot_func": axs[0].plot,
-            "data": [x_positions, y_positions],
-            "color": "#1f77b4",
-            "label": "Trajectory Path",
-            "xlabel": "x (m)",
-            "ylabel": "y (m)",
-            "title": "Position Trajectory (x, y)",
-            "scatter": True,
-        },
-        {
-            "plot_func": axs[1].plot,
-            "data": [k, velocities],
-            "color": "#2ca02c",
-            "ylabel": "Velocity (m/s)",
-            "title": "Velocity Over Time Steps",
-            "ylim": [0, max(velocities) * 1.1],
-            "annotation": {
-                "text": "Max Velocity",
-                "xy": (k[np.argmax(velocities)], max(velocities)),
-                "xytext": (k[np.argmax(velocities)] + 10, max(velocities) + 1),
-            },
-        },
-        {
-            "plot_func": axs[2].plot,
-            "data": [k, accelerations],
-            "color": "#d62728",
-            "ylabel": "Acceleration (m/s²)",
-            "title": "Acceleration Over Time Steps",
-        },
-        {
-            "plot_func": axs[3].plot,
-            "data": [k, jerks],
-            "color": "#9467bd",
-            "ylabel": "Jerk (m/s³)",
-            "title": "Jerk Over Time Steps",
-        },
-        {
-            "plot_func": axs[4].plot,
-            "data": [k, orientations],
-            "color": "#8c564b",
-            "ylabel": "Orientation (rad)",
-            "title": "Orientation Over Time Steps",
-        },
-        {
-            "plot_func": axs[5].plot,
-            "data": [k, orientation_rates],
-            "color": "#e377c2",
-            "ylabel": "Orientation Rate (rad/s)",
-            "title": "Orientation Rate of Change Over Time Steps",
-        },
-        {
-            "plot_func": axs[6].plot,
-            "data": [k, deltas],
-            "color": "#17becf",
-            "ylabel": "Steering Angle (rad)",
-            "title": "Steering Angle Over Time Steps",
-        },
-        {
-            "plot_func": axs[7].plot,
-            "data": [k, steering_rates],
-            "color": "#ff7f0e",
-            "ylabel": "Steering Rate (rad/s)",
-            "xlabel": "Time Step (k)",
-            "title": "Steering Rate of Change Over Time Steps",
-        },
-    ]
-
-    # Iterate over each plot configurations and apply settings
-    for i, config in enumerate(plot_configs):
-        ax = axs[i]
-        plot_func = config["plot_func"]
-        data = config["data"]
-        color = config.get("color", "#000000")  # Default to black if not specified
-        label = config.get("label", None)
-
-        # Plot the data
-        plot_func(*data, color=color, linewidth=2)
-
-        # If scatter is True, add scatter points
-        if config.get("scatter", False):
-            ax.scatter(
-                x_positions, y_positions, color=color, s=15, alpha=0.6, label=label
-            )
-            if label:
-                ax.legend()
-
-        # Set labels and title
-        ax.set_xlabel(config.get("xlabel", ""), fontsize=14)
-        ax.set_ylabel(config.get("ylabel", ""), fontsize=14)
-        ax.set_title(config.get("title", ""), fontsize=16)
-
-        # Set y-axis limits if specified
-        if "ylim" in config:
-            ax.set_ylim(config["ylim"])
-
-        # Add grid
-        ax.grid(True, linestyle="--", alpha=0.5)
-
-        # Add annotation if specified
-        if "annotation" in config:
-            ann = config["annotation"]
-            ax.annotate(
-                ann["text"],
-                xy=ann["xy"],
-                xytext=ann["xytext"],
-                arrowprops=dict(facecolor="black", arrowstyle="->"),
-                fontsize=12,
-            )
-
-    # Remove any unused subplots (if any)
-    for j in range(len(plot_configs), len(axs)):
-        fig.delaxes(axs[j])
-
-    # Save and close the figure with tight layout
-    plt.savefig(filename, dpi=300, bbox_inches="tight")
-    plt.close()

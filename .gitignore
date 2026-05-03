@@ -22,3 +22,5 @@ venv/
 evaluation/logs
 nohup.out
 experiments/output_result/
+external/
+source/commonroad_rp_backup_before_replace/

@@ -1,34 +1,23 @@
+import numpy as np
 import dataclasses
 import inspect
 import os.path
-import yaml
-from pathlib import Path
-import warnings
 from dataclasses import dataclass, field, fields
+from typing import Union, Any, Optional, Dict, List, Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
 
-import numpy as np
-from commonroad.common.solution import VehicleType
-from commonroad.geometry.shape import Rectangle
-from commonroad.planning.planning_problem import PlanningProblem, PlanningProblemSet
-from commonroad.prediction.prediction import TrajectoryPrediction
-from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType
-from commonroad.scenario.scenario import Scenario
-from commonroad.scenario.trajectory import Trajectory
-from commonroad_dc.feasibility.vehicle_dynamics import VehicleParameterMapping
 from omegaconf import OmegaConf
 from omegaconf.dictconfig import DictConfig
+import warnings
+
+from commonroad_dc.feasibility.vehicle_dynamics import VehicleParameterMapping
+from commonroad.common.solution import VehicleType
+from commonroad.scenario.scenario import Scenario
+from commonroad.planning.planning_problem import PlanningProblem, PlanningProblemSet
 from vehiclemodels.vehicle_parameters import VehicleParameters
 
-from source.commonroad_rp.utility.general import load_scenario_and_planning_problem
+from commonroad_rp.utility.general import load_scenario_and_planning_problem
 
-#
-# optimization:
-#   d_bounds_tolerance: 0.5
-#   d_bounds_tolerance_for_stopping: 0.2
-#   v_bounds_tolerance: 1.0
-#   s_bounds_tolerance: 1.0
 
 def _dict_to_params(dict_params: Dict[str, Any], cls: Any) -> Any:
     """
@@ -78,9 +67,7 @@ class BaseConfiguration:
         try:
             value = self.__getattribute__(item)
         except AttributeError as e:
-            raise KeyError(
-                f"{item} is not a parameter of {self.__class__.__name__}"
-            ) from e
+            raise KeyError(f"{item} is not a parameter of {self.__class__.__name__}") from e
         return value
 
     def __setitem__(self, key: str, value: Any):
@@ -93,9 +80,7 @@ class BaseConfiguration:
         try:
             self.__setattr__(key, value)
         except AttributeError as e:
-            raise KeyError(
-                f"{key} is not a parameter of {self.__class__.__name__}"
-            ) from e
+            raise KeyError(f"{key} is not a parameter of {self.__class__.__name__}") from e
 
 
 @dataclass
@@ -113,31 +98,16 @@ class PlanningConfiguration(BaseConfiguration):
     # time scaling factor for collision checking if planner time step and scenario time step deviate
     factor: int = 1
     # velocity threshold (in m/s) for switching to low velocity mode
-    low_vel_mode_threshold: float = -2
+    low_vel_mode_threshold: float = 4.0
     # kinematic constraints to check.
     # The list can contain these constraints: velocity, acceleration, kappa, kappa_dot,
     # yaw_rate (Exact naming important!!)
-    constraints_to_check: List[str] = field(
-        default_factory=lambda: [
-            "velocity",
-            "acceleration",
-            "kappa",
-            "kappa_dot",
-            "yaw_rate",
-        ]
-    )
+    constraints_to_check: List[str] = \
+        field(default_factory=lambda: ["velocity", "acceleration", "kappa", "kappa_dot", "yaw_rate"])
     # lookahead in dt*standstill_lookahead seconds if current velocity <= 0.1 and after specified time too
     standstill_lookahead: int = 10
     # safety margin for dynamic obstacles
     safety_margin_dynamic_obstacles: float = 0.0
-    #
-    distance_heading_to_next_to_arriving: float = 8
-    #
-    distance_arriving_to_next_to_before_stopping: float = 40
-    #
-    distance_arriving_to_stopping: float = 5.5
-    #
-    distance_before_stopping_to_stopping: float = 12
 
     def __post_init__(self):
         self.planning_horizon: float = self.dt * self.time_steps_computation
@@ -159,10 +129,9 @@ class SamplingConfiguration(BaseConfiguration):
     #             generates QUINTIC polynomials in longitudinal direction,
     #             sets target lon. velocity to 0.0
     longitudinal_mode: str = "velocity_keeping"
-    # longitudinal_mode: str = "stopping"
+
     # number of sampling levels
-    # num_sampling_levels: int = 5
-    num_sampling_levels: int = 5
+    num_sampling_levels: int = 4
 
     # sampling in fixed intervals
     # minimum time sampling in [s] (t_max is given by planning horizon)
@@ -173,21 +142,19 @@ class SamplingConfiguration(BaseConfiguration):
     # (value in interval ]0, 1])
     max_deceleration_ratio: float = 0.125
     v_min: float = 0
-    v_max: float = 20
+    v_max: float = 0
     # longitudinal position sampling interval around a desired stop point in [m]
     # (interval determined by setting desired stop position)
-    s_min: float = -2
-    s_max: float = 2
+    s_min: float = -1
+    s_max: float = 1
     # lateral sampling interval around reference path in [m]
     d_min: float = -3
     d_max: float = 3
 
-    desire_velocity: float = 5.0
     # number of initial velocity samples (in first sampling level)
     vel_init_samples: int = 3
     # number of initial position samples (in first sampling level)
     pos_init_samples: int = 3
-
 
 @dataclass
 class DebugConfiguration(BaseConfiguration):
@@ -214,8 +181,7 @@ class DebugConfiguration(BaseConfiguration):
     # draw sampled trajectory set
     draw_traj_set: bool = False
     # logging settings - Options: NOTSET, DEBUG, INFO, WARNING, ERROR, CRITICAL
-    # logging_level: str = "INFO"
-    logging_level: str = "DEBUG"
+    logging_level: str = "INFO"
     # use multiprocessing True/False
     multiproc: bool = True
     # number of workers for multiprocessing
@@ -233,37 +199,20 @@ class VehicleConfiguration(BaseConfiguration):
     id_type_vehicle: int = 2
 
     # get dimensions from given vehicle ID
-    # length: float = 4.508
-    length: float = 12.950
-    # width: float = 1.61
-    width: float = 2.555
+    length: float = 4.508
+    width: float = 1.61
+
     # distances front/rear axle to vehicle center
-    # wb_front_axle: float = 1.1561957064
-    # wb_rear_axle: float = 1.4227170936
-    wb_front_axle: float = 5.845
-    wb_rear_axle: float = 5.845
+    wb_front_axle: float = 1.1561957064
+    wb_rear_axle: float = 1.4227170936
 
     # get constraints from given vehicle ID
-    a_max: float = 10
+    a_max: float = 11.5
     v_switch: float = 7.319
-
-    # delta_min: float = -1.066
-    # delta_max: float = 1.066
-    delta_min: float = -1.1
-    delta_max: float =  1.1
-    v_delta_min: float = -4
-    v_delta_max: float = 4
-    # v_delta_min: float = -0.44
-    # v_delta_max: float = 0.44
-    traffic_root = Path.cwd().parent
-    cfg = yaml.safe_load((traffic_root /"source"/ "crmonitor" / "traffic_rules_pt.yaml").read_text())
-    cfg_2 = yaml.safe_load((traffic_root / "source"/"crmonitor" / "config_pt.yaml").read_text())
-    v_RB1_1 = cfg_2["ego_vehicle_param"]["road_condition_speed_limit"]
-    v_RB1_2 = cfg_2["ego_vehicle_param"]["fov_speed_limit"]
-    v_RB1_3 = cfg["traffic_rules_param"]["max_interstate_speed_bus"]
-    v_RB1_4 = cfg_2["ego_vehicle_param"]["braking_speed_limit"]
-    v_RB1_5 = cfg_2["ego_vehicle_param"]["v_standing_passenger"]
-    v_RB1 = min(v_RB1_1,v_RB1_2, v_RB1_3, v_RB1_4,  v_RB1_5)
+    delta_min: float = -1.066
+    delta_max: float = 1.066
+    v_delta_min: float = -0.4
+    v_delta_max: float = 0.4
 
     def __post_init__(self):
         self._update_computed_params()
@@ -281,9 +230,8 @@ class VehicleConfiguration(BaseConfiguration):
         with default values from the CommonRoad vehicle model (specified by id_type_vehicle)
         """
         # get vehicle parameters from CommonRoad vehicle models given cr_vehicle_id
-        vehicle_parameters: VehicleParameters = (
+        vehicle_parameters: VehicleParameters = \
             VehicleParameterMapping.from_vehicle_type(VehicleType(self.id_type_vehicle))
-        )
 
         # map param names to CR vehicle params
         name_to_cr_veh_param: Dict["str", float] = {
@@ -301,10 +249,8 @@ class VehicleConfiguration(BaseConfiguration):
 
         # overwrite params
         for f in fields(self):
-            if (
-                f.name not in yaml_config.keys()
-                and name_to_cr_veh_param.get(f.name) is not None
-            ):
+            if (f.name not in yaml_config.keys() and
+                    name_to_cr_veh_param.get(f.name) is not None):
                 setattr(self, f.name, name_to_cr_veh_param[f.name])
 
         # update computed values
@@ -333,23 +279,6 @@ class GeneralConfiguration(BaseConfiguration):
 
 
 @dataclass
-class SUMOSIMULATIONConfiguration(BaseConfiguration):
-    # planning steps for sumo simulation
-
-
-    sumo_planning_steps: int = 1
-
-@dataclass
-class OptimizationConfiguration(BaseConfiguration):
-
-    d_bounds_tolerance = 0.5
-    d_bounds_tolerance_for_stopping = 0.2
-    # d_bounds_tolerance_for_stopping = 3.0
-    v_bounds_tolerance = 1.0
-    s_bounds_tolerance = 1.0
-    # s_bounds_tolerance = 5.0
-
-@dataclass
 class ReactivePlannerConfiguration(BaseConfiguration):
     """Configuration parameters for reactive planner."""
 
@@ -358,12 +287,6 @@ class ReactivePlannerConfiguration(BaseConfiguration):
     sampling: SamplingConfiguration = field(default_factory=SamplingConfiguration)
     debug: DebugConfiguration = field(default_factory=DebugConfiguration)
     general: GeneralConfiguration = field(default_factory=GeneralConfiguration)
-    sumo: SUMOSIMULATIONConfiguration = field(
-        default_factory=SUMOSIMULATIONConfiguration
-    )
-    optimization: OptimizationConfiguration = field(
-        default_factory=OptimizationConfiguration
-    )
 
     def __post_init__(self):
         self.scenario: Optional[Scenario] = None
@@ -375,12 +298,8 @@ class ReactivePlannerConfiguration(BaseConfiguration):
         return self.general.name_scenario
 
     @classmethod
-    def load(
-        cls,
-        file_path: Union[Path, str],
-        scenario_name: Optional[str] = None,
-        validate_types: bool = True,
-    ) -> "ReactivePlannerConfiguration":
+    def load(cls, file_path: Union[Path, str], scenario_name: Optional[str] = None, validate_types: bool = True) \
+            -> 'ReactivePlannerConfiguration':
         """
         Loads parameters from a config yaml file and returns the Configuration class.
 
@@ -392,31 +311,23 @@ class ReactivePlannerConfiguration(BaseConfiguration):
         """
         file_path = Path(file_path)
 
-        assert (
-            file_path.suffix == ".yaml"
-        ), f"File type {file_path.suffix} is unsupported! Please use .yaml!"
+        assert file_path.suffix == ".yaml", f"File type {file_path.suffix} is unsupported! Please use .yaml!"
         loaded_yaml = OmegaConf.load(file_path)
         if validate_types:
-            OmegaConf.merge(
-                OmegaConf.structured(ReactivePlannerConfiguration), loaded_yaml
-            )
+            OmegaConf.merge(OmegaConf.structured(ReactivePlannerConfiguration), loaded_yaml)
         params = _dict_to_params(OmegaConf.to_object(loaded_yaml), cls)
         # add path to scenario file to config
         if scenario_name:
             params.general.set_path_scenario(scenario_name)
-        # update vehicle configurations params
+        # update vehicle configuration params
         params.vehicle.update_vehicle_config(loaded_yaml["vehicle"])
         return params
 
-    def update(
-        self,
-        scenario: Scenario = None,
-        planning_problem: PlanningProblem = None,
-        idx_planning_problem: Optional[int] = None,
-    ):
+    def update(self, scenario: Scenario = None, planning_problem: PlanningProblem = None,
+               idx_planning_problem: Optional[int] = None):
         """
-        Updates configurations based on the given attributes.
-        Function used to construct initial configurations before planner initialization and update configurations during
+        Updates configuration based on the given attributes.
+        Function used to construct initial configuration before planner initialization and update configuration during
         re-planning.
 
         :param scenario: (initial or updated) Scenario object
@@ -430,18 +341,11 @@ class ReactivePlannerConfiguration(BaseConfiguration):
         # if both scenario and planning problem are not explicitly provided
         if scenario is None and planning_problem is None:
             try:
-                self.scenario, self.planning_problem, self.planning_problem_set = (
-                    load_scenario_and_planning_problem(
-                        self.general.path_scenario, idx_planning_problem
-                    )
-                )
+                self.scenario, self.planning_problem, self.planning_problem_set = \
+                    load_scenario_and_planning_problem(self.general.path_scenario, idx_planning_problem)
             except FileNotFoundError:
-                warnings.warn(
-                    f"<ReactivePlannerConfiguration.update()>: No scenario .xml file found at "
-                    f"path_scenario = {self.general.path_scenario}"
-                )
+                warnings.warn(f"<ReactivePlannerConfiguration.update()>: No scenario .xml file found at "
+                              f"path_scenario = {self.general.path_scenario}")
 
         # Check that a scenario is set (planning problem can be set afterwards)
-        assert (
-            self.scenario is not None
-        ), "<Configuration.update()>: no scenario has been specified"
+        assert self.scenario is not None, "<Configuration.update()>: no scenario has been specified"

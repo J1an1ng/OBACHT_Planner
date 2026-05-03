@@ -1,7 +1,6 @@
-from source.commonroad_rp.utility.config import ReactivePlannerConfiguration
-
-from .implementation.sampling_space_corridor import CorridorSampling
+from commonroad_rp.utility.config import ReactivePlannerConfiguration
 from .implementation.sampling_space_fixed import FixedIntervalSampling
+from .implementation.sampling_space_corridor import CorridorSampling
 
 
 def sampling_space_factory(config: ReactivePlannerConfiguration):

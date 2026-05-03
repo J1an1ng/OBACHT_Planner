@@ -1,9 +1,9 @@
 import logging
 import os
-import sys
 from datetime import datetime
+import sys
+from commonroad_rp.utility.config import ReactivePlannerConfiguration
 
-from source.commonroad_rp.utility.config import ReactivePlannerConfiguration
 
 # dictionary to log computation times of planner modules
 logging_dict: dict = {
@@ -13,7 +13,7 @@ logging_dict: dict = {
     "kinematic_check": 0.0,
     "collision_check": 0.0,
     "rule_check": 0.0,
-    "type_conversions": 0.0,
+    "type_conversions": 0.0
 }
 
 
@@ -29,9 +29,7 @@ def initialize_logger(config: ReactivePlannerConfiguration) -> logging.Logger:
 
     # create file handler (outputs to file)
     string_date_time = datetime.now().strftime("_%Y_%m_%d_%H-%M-%S")
-    path_log = os.path.join(
-        config.general.path_logs, f"{config.name_scenario}{string_date_time}.log"
-    )
+    path_log = os.path.join(config.general.path_logs, f"{config.name_scenario}{string_date_time}.log")
     file_handler = logging.FileHandler(path_log)
 
     # set logging levels
@@ -41,10 +39,8 @@ def initialize_logger(config: ReactivePlannerConfiguration) -> logging.Logger:
 
     # create log formatter
     # formatter = logging.Formatter('%(asctime)s\t%(filename)s\t\t%(funcName)s@%(lineno)d\t%(levelname)s\t%(message)s')
-    log_formatter = logging.Formatter(
-        "%(levelname)-8s [%(asctime)s] --- %(message)s (%(filename)s:%(lineno)s)",
-        "%Y-%m-%d %H:%M:%S",
-    )
+    log_formatter = logging.Formatter("%(levelname)-8s [%(asctime)s] --- %(message)s (%(filename)s:%(lineno)s)",
+                                  "%Y-%m-%d %H:%M:%S")
     file_handler.setFormatter(log_formatter)
 
     # create stream handler (prints to stdout)
@@ -52,9 +48,7 @@ def initialize_logger(config: ReactivePlannerConfiguration) -> logging.Logger:
     stream_handler.setLevel(loglevel)
 
     # create stream formatter
-    stream_formatter = logging.Formatter(
-        "%(levelname)-8s [ReactivePlanner]: %(message)s"
-    )
+    stream_formatter = logging.Formatter("%(levelname)-8s [ReactivePlanner]: %(message)s")
     stream_handler.setFormatter(stream_formatter)
 
     # add handlers

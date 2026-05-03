@@ -1,27 +1,25 @@
 __author__ = "Christian Pek, Gerald Würsching"
 __copyright__ = "TUM Cyber-Physical Systems Group"
 __credits__ = ["BMW Group CAR@TUM, interACT"]
-__version__ = "2024.1"
+__version__ = "2025.1"
 __maintainer__ = "Gerald Würsching"
 __email__ = "commonroad@lists.lrz.de"
 __status__ = "Beta"
 
-import math
-from abc import ABC, abstractmethod
+from typing import Union, List, Optional
 from enum import Enum
-from typing import List, Optional, Union
-
 import numpy as np
+from abc import ABC, abstractmethod
+import math
 
-from source.commonroad_rp.polynomial_trajectory import PolynomialTrajectory
-from source.commonroad_rp.state import ReactivePlannerState
+from commonroad_rp.state import ReactivePlannerState
+from commonroad_rp.polynomial_trajectory import PolynomialTrajectory
 
 
 class FeasibilityStatus(Enum):
     """Enum with types of feasibility status of a TrajectorySample after checking. (Can be extended)"""
-
-    FEASIBLE = "feasible"
-    INFEASIBLE_KINEMATIC = "infeasible_kinematic"
+    FEASIBLE = 'feasible'
+    INFEASIBLE_KINEMATIC = 'infeasible_kinematic'
     INFEASIBLE_COLLISION = "infeasible_collision"
     INFEASIBLE_RULE = "infeasible_rule"
 
@@ -67,17 +65,8 @@ class CartesianSample(Sample):
     Class representing the cartesian trajectory of a given trajectory sample
     """
 
-    def __init__(
-        self,
-        x: np.ndarray,
-        y: np.ndarray,
-        theta: np.ndarray,
-        v: np.ndarray,
-        a: np.ndarray,
-        kappa: np.ndarray,
-        kappa_dot: np.ndarray,
-        current_time_step: int,
-    ):
+    def __init__(self, x: np.ndarray, y: np.ndarray, theta: np.ndarray, v: np.ndarray, a: np.ndarray, kappa: np.ndarray,
+                 kappa_dot: np.ndarray, current_time_step: int):
         super().__init__(current_time_step)
         self.x = x
         self.y = y
@@ -189,34 +178,24 @@ class CartesianSample(Sample):
         # create time index
         t = np.arange(1, steps + 1, 1) * dt
         # enlarge acceleration values
-        self.a[self.current_time_step :] = np.repeat(self.a[last_time_step], steps)
+        self.a[self.current_time_step:] = np.repeat(self.a[last_time_step], steps)
 
         # enlarge velocities by considering acceleration
         v_temp = self.v[last_time_step] + t * self.a[-1]
         # remove negative velocities
         v_temp = v_temp * np.greater_equal(v_temp, 0)
-        self.v[self.current_time_step :] = v_temp
+        self.v[self.current_time_step:] = v_temp
 
         # enlarge orientations
-        self.theta[self.current_time_step :] = np.repeat(
-            self.theta[last_time_step], steps
-        )
+        self.theta[self.current_time_step:] = np.repeat(self.theta[last_time_step], steps)
         # enlarge curvatures
-        self.kappa[self.current_time_step :] = np.repeat(
-            self.kappa[last_time_step], steps
-        )
+        self.kappa[self.current_time_step:] = np.repeat(self.kappa[last_time_step], steps)
         # enlarge curvature changes
-        self.kappa_dot[self.current_time_step :] = np.repeat(
-            self.kappa_dot[last_time_step], steps
-        )
+        self.kappa_dot[self.current_time_step:] = np.repeat(self.kappa_dot[last_time_step], steps)
 
         # enlarge positions
-        self.x[self.current_time_step :] = self.x[last_time_step] + np.cumsum(
-            dt * v_temp * math.cos(self.theta[last_time_step])
-        )
-        self.y[self.current_time_step :] = self.y[last_time_step] + np.cumsum(
-            dt * v_temp * math.sin(self.theta[last_time_step])
-        )
+        self.x[self.current_time_step:] = self.x[last_time_step] + np.cumsum(dt * v_temp * math.cos(self.theta[last_time_step]))
+        self.y[self.current_time_step:] = self.y[last_time_step] + np.cumsum(dt * v_temp * math.sin(self.theta[last_time_step]))
         self.current_time_step = self.length()
 
     def convert_to_rp_state_list(
@@ -240,9 +219,7 @@ class CartesianSample(Sample):
                 "velocity": self.v[i],
                 "acceleration": self.a[i],
                 "steering_angle": np.arctan2(wheelbase * self.kappa[i], 1.0),
-                "yaw_rate": (
-                    (self.theta[i] - self.theta[i - 1]) / dt if i > 0 else init_yaw_rate
-                ),
+                "yaw_rate": (self.theta[i] - self.theta[i - 1]) / dt if i > 0 else init_yaw_rate,
             }
             cr_state_list.append(ReactivePlannerState(**cr_state_dict))
         return cr_state_list
@@ -253,17 +230,7 @@ class CurviLinearSample(Sample):
     Class representing the curvilinear trajectory of a given trajectory sample
     """
 
-    def __init__(
-        self,
-        s: np.ndarray,
-        d: np.ndarray,
-        theta: np.ndarray,
-        current_time_step: int,
-        dd=None,
-        ddd=None,
-        ss=None,
-        sss=None,
-    ):
+    def __init__(self, s: np.ndarray, d: np.ndarray, theta: np.ndarray, current_time_step: int, dd=None, ddd=None, ss=None, sss=None):
         super().__init__(current_time_step)
         self.s = s
         self.d = d
@@ -374,32 +341,22 @@ class CurviLinearSample(Sample):
         s_dot_temp = self.s_dot[last_time_step] + t * self.s_ddot[-1]
         # remove negative velocities
         s_dot_temp = s_dot_temp * np.greater_equal(s_dot_temp, 0)
-        self.s_dot[self.current_time_step :] = s_dot_temp
+        self.s_dot[self.current_time_step:] = s_dot_temp
 
         # enlarge velocities by considering acceleration
         d_dot_temp = self.d_dot[last_time_step] + t * self.d_ddot[-1]
-        self.d_dot[self.current_time_step :] = d_dot_temp
+        self.d_dot[self.current_time_step:] = d_dot_temp
 
         # enlarge accelerations
-        self.s_ddot[self.current_time_step :] = np.repeat(
-            self.s_ddot[last_time_step], steps
-        )
-        self.d_ddot[self.current_time_step :] = np.repeat(
-            self.d_ddot[last_time_step], steps
-        )
+        self.s_ddot[self.current_time_step:] = np.repeat(self.s_ddot[last_time_step], steps)
+        self.d_ddot[self.current_time_step:] = np.repeat(self.d_ddot[last_time_step], steps)
 
         # enlarge orientations
-        self.theta[self.current_time_step :] = np.repeat(
-            self.theta[last_time_step], steps
-        )
+        self.theta[self.current_time_step:] = np.repeat(self.theta[last_time_step], steps)
 
         # enlarge positions
-        self.s[self.current_time_step :] = (
-            self.s[last_time_step] + t * self.s_dot[last_time_step]
-        )
-        self.d[self.current_time_step :] = (
-            self.d[last_time_step] + t * self.d_dot[last_time_step]
-        )
+        self.s[self.current_time_step:] = self.s[last_time_step] + t * self.s_dot[last_time_step]
+        self.d[self.current_time_step:] = self.d[last_time_step] + t * self.d_dot[last_time_step]
         self.current_time_step = self.length()
 
 
@@ -409,24 +366,19 @@ class TrajectorySample(Sample):
     for the longitudinal and lateral motion
     """
 
-    def __init__(
-        self,
-        horizon: float,
-        dt: float,
-        trajectory_long: PolynomialTrajectory,
-        trajectory_lat: PolynomialTrajectory,
-    ):
+    def __init__(self, horizon: float, dt: float, trajectory_long: PolynomialTrajectory,
+                 trajectory_lat: PolynomialTrajectory):
         self.horizon = horizon
         self.dt = dt
-        assert isinstance(trajectory_long, PolynomialTrajectory), (
-            "<TrajectorySample/init>: Provided longitudinal trajectory "
-            "is not valid! trajectory = {}".format(trajectory_long)
-        )
+        assert isinstance(trajectory_long,
+                          PolynomialTrajectory), '<TrajectorySample/init>: Provided longitudinal trajectory ' \
+                                                 'is not valid! trajectory = {}'.format(
+            trajectory_long)
         self._trajectory_long = trajectory_long
-        assert isinstance(trajectory_lat, PolynomialTrajectory), (
-            "<TrajectorySample/init>: Provided lateral trajectory "
-            "is not valid! trajectory = {}".format(trajectory_lat)
-        )
+        assert isinstance(trajectory_lat,
+                          PolynomialTrajectory), '<TrajectorySample/init>: Provided lateral trajectory ' \
+                                                 'is not valid! trajectory = {}'.format(
+            trajectory_lat)
         self._trajectory_lat = trajectory_lat
 
         self._cost = 0
@@ -550,13 +502,10 @@ class TrajectoryBundle:
         :param trajectories: The list of trajectory samples
         :param cost_function: The cost function for the evaluation
         """
-        assert isinstance(trajectories, list) and all(
-            [isinstance(t, TrajectorySample) for t in trajectories]
-        ), (
-            "<TrajectoryBundle/init>: "
-            "Provided list of trajectory samples is not "
-            "valid! List = {}".format(trajectories)
-        )
+        assert isinstance(trajectories, list) and all([isinstance(t, TrajectorySample) for t in trajectories]), \
+            '<TrajectoryBundle/init>: ' \
+            'Provided list of trajectory samples is not ' \
+            'valid! List = {}'.format(trajectories)
 
         self.trajectories: List[TrajectorySample] = trajectories
         self._cost_function = cost_function

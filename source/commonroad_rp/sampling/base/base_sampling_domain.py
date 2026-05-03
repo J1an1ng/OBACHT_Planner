@@ -11,13 +11,10 @@ class Sampling(ABC):
 
     def __init__(self, low: float, up: float, num_sampling_levels: int):
         # Check validity of input
-        assert np.greater_equal(up, low), (
-            "<Sampling>: Upper sampling bound is not greater than "
-            "lower bound! up = {} , low = {}".format(up, low)
-        )
-        assert (
-            isinstance(num_sampling_levels, int) and num_sampling_levels > 0
-        ), "<Sampling: number of samples must be positive integer>"
+        assert np.greater_equal(up, low), '<Sampling>: Upper sampling bound is not greater than ' \
+                                      'lower bound! up = {} , low = {}'.format(up, low)
+        assert isinstance(num_sampling_levels, int) and num_sampling_levels > 0, \
+            '<Sampling: number of samples must be positive integer>'
 
         self.low = low
         self.up = up
@@ -38,12 +35,8 @@ class Sampling(ABC):
         :param sampling_level: The sampling stage to receive (>=0)
         :return: The set of sampling steps for the queried sampling stage
         """
-        assert (
-            0 <= sampling_level < self.num_sampling_levels
-        ), "<Sampling>: Provided sampling level is incorrect! stage = {}".format(
-            sampling_level
-        )
-
+        assert 0 <= sampling_level < self.num_sampling_levels, \
+            '<Sampling>: Provided sampling level is incorrect! stage = {}'.format(sampling_level)
         return self._dict_level_to_sample_set[sampling_level]
 
     @property

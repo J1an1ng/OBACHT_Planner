@@ -1,17 +1,17 @@
 __author__ = "Christian Pek, Gerald Würsching"
 __copyright__ = "TUM Cyber-Physical Systems Group"
 __credits__ = ["BMW Group CAR@TUM, interACT"]
-__version__ = "2024.1"
+__version__ = "2025.1"
 __maintainer__ = "Gerald Würsching"
 __email__ = "commonroad@lists.lrz.de"
 __status__ = "Beta"
 
+import numpy as np
 import warnings
 from abc import ABC, abstractmethod
+from methodtools import lru_cache
 
 import commonroad.common.validity as val
-import numpy as np
-from methodtools import lru_cache
 
 
 class PolynomialTrajectory(ABC):
@@ -19,9 +19,7 @@ class PolynomialTrajectory(ABC):
     Abstract class representing a polynomial trajectory
     """
 
-    def __init__(
-        self, tau_0=0, delta_tau=0, x_0=np.zeros([3, 1]), x_d=np.zeros([3, 1]), power=5
-    ):
+    def __init__(self, tau_0=0, delta_tau=0, x_0=np.zeros([3, 1]), x_d=np.zeros([3, 1]), power=5):
         """
         Initializer of a polynomial trajectory
         :param tau_0: The start parameter value of the trajectory
@@ -40,12 +38,11 @@ class PolynomialTrajectory(ABC):
         self._cost = None
 
         # set information about polynomial trajectory
-        assert (
-            val.is_natural_number(power) and power >= 4
-        ), "<PolynomialTrajectory/power>: power not valid! power={}".format(power)
+        assert val.is_natural_number(
+            power) and power >= 4, '<PolynomialTrajectory/power>: power not valid! power={}'.format(power)
         self._power = power
         if power != 5 and power != 4:
-            warnings.warn("Only power of 5 currently supported!")
+            warnings.warn('Only power of 5 currently supported!')
 
         # compute coefficients
         self.coeffs = self.calc_coeffs()
@@ -72,11 +69,8 @@ class PolynomialTrajectory(ABC):
         Sets the coefficients of the polynomial trajectory
         :param co: The coefficients of the polynomial trajectory
         """
-        assert (
-            isinstance(co, np.ndarray) and len(co) == 6
-        ), "<PolynomialTrajectory/coeffs>: coeffs length not valid! length={}".format(
-            len(co)
-        )
+        assert isinstance(co, np.ndarray) and len(
+            co) == 6, '<PolynomialTrajectory/coeffs>: coeffs length not valid! length={}'.format(len(co))
         self._coeffs = co
         # database of already computed queries
         self._db = dict()
@@ -91,11 +85,7 @@ class PolynomialTrajectory(ABC):
 
     @delta_tau.setter
     def delta_tau(self, tau: float):
-        assert val.is_positive(
-            tau
-        ), "<PolynomialTrajectory/delta_tau>: delta_tau not valid! delta_tau={}".format(
-            tau
-        )
+        assert val.is_positive(tau), '<PolynomialTrajectory/delta_tau>: delta_tau not valid! delta_tau={}'.format(tau)
         self._delta_tau = tau
 
     @property
@@ -112,9 +102,8 @@ class PolynomialTrajectory(ABC):
         Sets initial value of variable describing polynomial trajectory (time or arclength)
         :param tau: New initial value
         """
-        assert (
-            val.is_real_number(tau) and tau >= 0
-        ), "<PolynomialTrajectory/tau_0>: tau_0 not valid! tau_0={}".format(tau)
+        assert val.is_real_number(tau) and tau >= 0, '<PolynomialTrajectory/tau_0>: tau_0 not valid! tau_0={}'.format(
+            tau)
         self._tau_0 = tau
 
     @property
@@ -131,9 +120,7 @@ class PolynomialTrajectory(ABC):
         Sets initial state of polynomial trajectory
         :param x: New initial state
         """
-        assert val.is_real_number_vector(
-            x
-        ), "<PolynomialTrajectory/x_0>: x_0 not valid! x_0={}".format(x)
+        assert val.is_real_number_vector(x), '<PolynomialTrajectory/x_0>: x_0 not valid! x_0={}'.format(x)
         self._x_0 = x
 
     @property
@@ -177,9 +164,8 @@ class PolynomialTrajectory(ABC):
         Sets the cost of the polynomial trajectory
         :param cost: The new cost
         """
-        assert (
-            val.is_real_number(cost) and cost >= 0
-        ), "<PolynomialTrajectory/cost>: cost not valid! cost={}".format(cost)
+        assert val.is_real_number(cost) and cost >= 0, '<PolynomialTrajectory/cost>: cost not valid! cost={}'.format(
+            cost)
         self._cost = cost
 
     def squared_jerk_integral(self, t):
@@ -189,20 +175,17 @@ class PolynomialTrajectory(ABC):
         :return: evaluated integral
         """
         if self.coeffs is None:
-            raise ValueError("Coefficients are not determined")
+            raise ValueError('Coefficients are not determined')
         t2 = t * t
         t3 = t2 * t
         t4 = t3 * t
         t5 = t4 * t
 
-        integral_squared_jerk = (
-            36 * self.coeffs[3] * self.coeffs[3] * t
-            + 144 * self.coeffs[3] * self.coeffs[4] * t2
-            + 240 * self.coeffs[3] * self.coeffs[5] * t3
-            + 192 * self.coeffs[4] * self.coeffs[4] * t3
-            + 720 * self.coeffs[4] * self.coeffs[5] * t4
-            + 720 * self.coeffs[5] * self.coeffs[5] * t5
-        )
+        integral_squared_jerk = (36 * self.coeffs[3] * self.coeffs[3] * t + 144 * self.coeffs[3] * self.coeffs[4] * t2 +
+                                 240 * self.coeffs[3] * self.coeffs[5] * t3 + 192 * self.coeffs[4] * self.coeffs[
+                                     4] * t3 +
+                                 720 * self.coeffs[4] * self.coeffs[5] * t4 + 720 * self.coeffs[5] * self.coeffs[
+                                     5] * t5)
 
         return integral_squared_jerk
 
@@ -212,9 +195,7 @@ class PolynomialTrajectory(ABC):
         :param tau: point between tau_0 and (tau_0+delta_tau).
         :return: Numpy array of the form [p, p_dot, p_ddot]
         """
-        assert (
-            self.coeffs is not None
-        ), "<PolynomialTrajectory/evaluate_state_at_tau>: Coefficients are not determined!"
+        assert self.coeffs is not None, '<PolynomialTrajectory/evaluate_state_at_tau>: Coefficients are not determined!'
 
         # check if this query has already been processed
         if tau in self._db:
@@ -253,10 +234,8 @@ class PolynomialTrajectory(ABC):
         :return: The jerk at the given parameter values
         """
         if self.coeffs is None:
-            raise ValueError("Coefficients are not determined")
-        return (
-            6 * self.coeffs[3] + 24 * self.coeffs[4] * tau + 60 * self.coeffs[5] * tau2
-        )
+            raise ValueError('Coefficients are not determined')
+        return 6 * self.coeffs[3] + 24 * self.coeffs[4] * tau + 60 * self.coeffs[5] * tau2
 
     def calc_acceleration(self, tau, tau2, tau3):
         """
@@ -267,24 +246,14 @@ class PolynomialTrajectory(ABC):
         :return: The acceleration at the given parameter values
         """
         if self.coeffs is None:
-            raise ValueError("Coefficients are not determined")
-        return (
-            2 * self.coeffs[2]
-            + 6 * self.coeffs[3] * tau
-            + 12 * self.coeffs[4] * tau2
-            + 20 * self.coeffs[5] * tau3
-        )
+            raise ValueError('Coefficients are not determined')
+        return 2 * self.coeffs[2] + 6 * self.coeffs[3] * tau + 12 * self.coeffs[4] * tau2 + 20 * self.coeffs[5] * tau3
 
     def calc_velocity(self, tau, tau2, tau3, tau4):
         if self.coeffs is None:
-            raise ValueError("Coefficients are not determined")
-        return (
-            self.coeffs[1]
-            + 2.0 * self.coeffs[2] * tau
-            + 3.0 * self.coeffs[3] * tau2
-            + 4.0 * self.coeffs[4] * tau3
-            + 5.0 * self.coeffs[5] * tau4
-        )
+            raise ValueError('Coefficients are not determined')
+        return (self.coeffs[1] + 2. * self.coeffs[2] * tau + 3. * self.coeffs[3] * tau2 + 4. * self.coeffs[4] * tau3 +
+                5. * self.coeffs[5] * tau4)
 
     def calc_position(self, tau, tau2, tau3, tau4, tau5):
         """
@@ -297,15 +266,9 @@ class PolynomialTrajectory(ABC):
         :return: The positions of the trajectory at the specified tau
         """
         if self.coeffs is None:
-            raise ValueError("Coefficients are not determined")
-        return (
-            self.coeffs[0]
-            + self.coeffs[1] * tau
-            + self.coeffs[2] * tau2
-            + self.coeffs[3] * tau3
-            + self.coeffs[4] * tau4
-            + self.coeffs[5] * tau5
-        )
+            raise ValueError('Coefficients are not determined')
+        return (self.coeffs[0] + self.coeffs[1] * tau + self.coeffs[2] * tau2 + self.coeffs[3] * tau3 +
+                self.coeffs[4] * tau4 + self.coeffs[5] * tau5)
 
 
 class QuinticTrajectory(PolynomialTrajectory):
@@ -313,12 +276,8 @@ class QuinticTrajectory(PolynomialTrajectory):
     Class representing a quintic polynomial trajectory
     """
 
-    def __init__(
-        self, tau_0=0, delta_tau=0, x_0=np.zeros([3, 1]), x_d=np.zeros([3, 1])
-    ):
-        super(QuinticTrajectory, self).__init__(
-            tau_0=tau_0, delta_tau=delta_tau, x_0=x_0, x_d=x_d, power=5
-        )
+    def __init__(self, tau_0=0, delta_tau=0, x_0=np.zeros([3, 1]), x_d=np.zeros([3, 1])):
+        super(QuinticTrajectory, self).__init__(tau_0=tau_0, delta_tau=delta_tau, x_0=x_0, x_d=x_d, power=5)
 
     def calc_coeffs(self) -> np.ndarray:
         """
@@ -327,15 +286,12 @@ class QuinticTrajectory(PolynomialTrajectory):
         """
         p_init, p_init_d, p_init_dd = self.x_0
         p_final, p_final_d, p_final_dd = self.x_d
-        return QuinticTrajectory._calc_coeffs_static(
-            p_init, p_init_d, p_init_dd, p_final, p_final_d, p_final_dd, self.delta_tau
-        )
+        return QuinticTrajectory._calc_coeffs_static(p_init, p_init_d, p_init_dd, p_final, p_final_d, p_final_dd,
+                                                     self.delta_tau)
 
     @lru_cache(3024)
     @classmethod
-    def _calc_coeffs_static(
-        cls, p_init, p_init_d, p_init_dd, p_final, p_final_d, p_final_dd, delta_tau
-    ) -> np.ndarray:
+    def _calc_coeffs_static(cls, p_init, p_init_d, p_init_dd, p_final, p_final_d, p_final_dd, delta_tau) -> np.ndarray:
         """
         Computes the coefficients of the quintic polynomial trajectory
         :return: The coefficients
@@ -346,21 +302,13 @@ class QuinticTrajectory(PolynomialTrajectory):
         t4 = t2 * t2
         t5 = t4 * delta_tau
 
-        a = np.array(
-            [
-                [t3, t4, t5],
-                [3.0 * t2, 4.0 * t3, 5.0 * t4],
-                [6.0 * delta_tau, 12.0 * t2, 20.0 * t3],
-            ]
-        )
+        a = np.array([[t3, t4, t5],
+                      [3. * t2, 4. * t3, 5. * t4],
+                      [6. * delta_tau, 12. * t2, 20. * t3]])
 
-        b = np.array(
-            [
-                p_final - (p_init + p_init_d * delta_tau + 0.5 * p_init_dd * t2),
-                p_final_d - (p_init_d + p_init_dd * delta_tau),
-                p_final_dd - p_init_dd,
-            ]
-        )
+        b = np.array([p_final - (p_init + p_init_d * delta_tau + .5 * p_init_dd * t2),
+                      p_final_d - (p_init_d + p_init_dd * delta_tau),
+                      p_final_dd - p_init_dd])
 
         # try to solve linear optimization problem
         try:
@@ -369,7 +317,7 @@ class QuinticTrajectory(PolynomialTrajectory):
             print(e)
             return np.empty(0)
 
-        return np.array([p_init, p_init_d, 0.5 * p_init_dd, x[0], x[1], x[2]])
+        return np.array([p_init, p_init_d, .5 * p_init_dd, x[0], x[1], x[2]])
 
 
 class QuarticTrajectory(PolynomialTrajectory):
@@ -377,14 +325,9 @@ class QuarticTrajectory(PolynomialTrajectory):
     Class representing a quartic polynomial trajectory
     """
 
-    def __init__(
-        self, tau_0=0, delta_tau=0, x_0=np.zeros([3, 1]), x_d=np.zeros([2, 1])
-    ):
+    def __init__(self, tau_0=0, delta_tau=0, x_0=np.zeros([3, 1]), x_d=np.zeros([2, 1])):
         self._desired_velocity = x_d[0]
-
-        super(QuarticTrajectory, self).__init__(
-            tau_0=tau_0, delta_tau=delta_tau, x_0=x_0, x_d=x_d, power=4
-        )
+        super(QuarticTrajectory, self).__init__(tau_0=tau_0, delta_tau=delta_tau, x_0=x_0, x_d=x_d, power=4)
 
     def calc_coeffs(self) -> np.ndarray:
         """
@@ -392,34 +335,20 @@ class QuarticTrajectory(PolynomialTrajectory):
         :return: The coefficients
         """
         p_init, p_init_d, p_init_dd = self.x_0
-        coeffs = QuarticTrajectory._calc_coeffs_static_(
-            p_init, p_init_d, p_init_dd, self.delta_tau, self._desired_velocity
-        )
-
-
-        tau = self.delta_tau
-        a1 = coeffs[1]
-        a2 = coeffs[2]
-        a3 = coeffs[3]
-        a4 = coeffs[4]
-        v_end = a1 + 2 * a2 * tau + 3 * a3 * tau**2 + 4 * a4 * tau**3
-
-        # print(f"Sampled v_target={self._desired_velocity}, Actual v_end={v_end:.6f}")
-        return QuarticTrajectory._calc_coeffs_static_(
-            p_init, p_init_d, p_init_dd, self.delta_tau, self._desired_velocity
-        )
+        return QuarticTrajectory._calc_coeffs_static_(p_init, p_init_d, p_init_dd,
+                                                      self.delta_tau, self._desired_velocity)
 
     @lru_cache(3024)
     @classmethod
-    def _calc_coeffs_static_(
-        cls, p_init, p_init_d, p_init_dd, delta_tau, _desired_velocity
-    ):
+    def _calc_coeffs_static_(cls, p_init, p_init_d, p_init_dd, delta_tau, _desired_velocity):
         t2 = np.power(delta_tau, 2)
         t3 = t2 * delta_tau
 
-        a = np.array([[3.0 * t2, 4.0 * t3], [6.0 * delta_tau, 12.0 * t2]])
+        a = np.array([[3. * t2, 4. * t3],
+                      [6. * delta_tau, 12. * t2]])
 
-        b = np.array([_desired_velocity - p_init_d - p_init_dd * delta_tau, -p_init_dd])
+        b = np.array([_desired_velocity - p_init_d - p_init_dd * delta_tau,
+                      - p_init_dd])
 
         # try to solve linear optimization problem
         try:
@@ -428,4 +357,5 @@ class QuarticTrajectory(PolynomialTrajectory):
             print(e)
             return np.empty(0)
 
-        return np.array([p_init, p_init_d, 0.5 * p_init_dd, x[0], x[1], 0.0])
+        return np.array([p_init, p_init_d, .5 * p_init_dd, x[0], x[1], 0.])
+
