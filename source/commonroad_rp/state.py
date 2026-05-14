@@ -1,7 +1,11 @@
+import copy
 from dataclasses import dataclass
+from typing import List
+
 import numpy as np
 
 from commonroad.scenario.state import KSState, FloatExactOrInterval, InitialState
+from commonroad.scenario.trajectory import State
 
 
 @dataclass(eq=False)
@@ -70,8 +74,10 @@ class ReactivePlannerState(KSState):
             initial_state.acceleration = 0.
 
         # remove slip angle
-        if hasattr(initial_state, "slip_angle"):
+        try:
             delattr(initial_state, "slip_angle")
+        except AttributeError:
+            pass
 
         # shift initial position from center to rear axle
         orientation = initial_state.orientation
@@ -86,3 +92,98 @@ class ReactivePlannerState(KSState):
         x0_planner.steering_angle = np.arctan2(wheelbase * x0_planner.yaw_rate, x0_planner.velocity)
 
         return x0_planner
+
+
+def append_state_to_list(state_list: List[State], new_state: State) -> None:
+
+    new_state = copy.deepcopy(new_state)
+
+    if not isinstance(state_list, list) or any(
+        not isinstance(s, State) for s in state_list
+    ):
+        raise TypeError("state_list 必须是 List[State]，且元素均为 State")
+
+    if not isinstance(new_state, State):
+        raise TypeError("new_state 必须是 State")
+
+    if not state_list:
+        raise ValueError("state_list 不能为空")
+
+    ref_state = state_list[0]
+    ref_attrs = set(ref_state.used_attributes)
+    new_attrs = set(new_state.used_attributes)
+
+    missing = ref_attrs - new_attrs
+    for attr in missing:
+        setattr(new_state, attr, copy.deepcopy(getattr(ref_state, attr)))
+
+    extra = new_attrs - ref_attrs
+    for attr in extra:
+        delattr(new_state, attr)
+
+    new_state.time_step = state_list[-1].time_step + 1
+
+    state_list.append(new_state)
+
+
+def append_states_to_list_ver(
+    target_list: List[State], source_list: List[State], n: int
+) -> None:
+    """
+    Append multiple states from the source list to the target list starting from the second state
+
+    :param target_list: The target list of states (will be modified)
+    :param source_list: The source list of states (from which states are taken)
+    :param n: The number of states to append (starting from index 1)
+    """
+    start_index = 1
+
+    if not target_list:
+        raise ValueError("target_list cannot be empty")
+
+    if not isinstance(target_list, list) or any(
+        not isinstance(s, State) for s in target_list
+    ):
+        raise TypeError(
+            "target_list must be List[State] with all elements being State instances"
+        )
+
+    if not isinstance(source_list, list) or any(
+        not isinstance(s, State) for s in source_list
+    ):
+        raise TypeError(
+            "source_list must be List[State] with all elements being State instances"
+        )
+
+    if len(source_list) < 2:
+        raise ValueError(
+            f"Source list must contain at least 2 states, but got {len(source_list)}"
+        )
+
+    if n <= 0:
+        raise ValueError("n must be a positive integer")
+
+    if start_index + n > len(source_list):
+        raise IndexError(
+            f"Source list has {len(source_list)} states, cannot append {n} states starting from index 1"
+        )
+
+    ref_state = target_list[0]
+    ref_attrs = set(ref_state.used_attributes)
+    last_time_step = target_list[-1].time_step
+
+    for i in range(n):
+        source_state = source_list[start_index + i]
+        new_state = copy.deepcopy(source_state)
+        new_attrs = set(new_state.used_attributes)
+
+        missing = ref_attrs - new_attrs
+        for attr in missing:
+            setattr(new_state, attr, copy.deepcopy(getattr(ref_state, attr)))
+
+        extra = new_attrs - ref_attrs
+        for attr in extra:
+            delattr(new_state, attr)
+
+        new_state.time_step = last_time_step + i + 1
+        target_list.append(new_state)

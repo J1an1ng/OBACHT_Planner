@@ -4,6 +4,25 @@ import numpy as np
 from source.commonroad_rp.utility.utils_coordinate_system import CoordinateSystem, create_coordinate_system
 
 
+def _extend_path(vertices: np.ndarray, extra_m: float = 80.0) -> np.ndarray:
+    """
+    Append `extra_m` metres of straight extension beyond the last vertex,
+    keeping the direction of the final segment.  This ensures the projection
+    domain is long enough to cover the full planning horizon even when the
+    vehicle is near the end of the lanelet.
+    """
+    if len(vertices) < 2:
+        return vertices
+    direction = vertices[-1] - vertices[-2]
+    norm = np.linalg.norm(direction)
+    if norm < 1e-9:
+        return vertices
+    unit = direction / norm
+    n_pts = max(2, int(extra_m / 0.5))          # one point every 0.5 m
+    extras = vertices[-1] + unit * np.linspace(0.5, extra_m, n_pts)[:, None]
+    return np.vstack([vertices, extras])
+
+
 class PlannerState(ABC):
     """
     Abstract base class for planner states.
@@ -104,14 +123,12 @@ class HeadingState(PlannerState):
     def create_coordinate_system(self, scenario, planning_problem) -> CoordinateSystem:
         if self.scenario_type == "bus_stop_bulb":
             # For bulb scenario, use lane 1
-            return create_coordinate_system(
-                scenario.lanelet_network.find_lanelet_by_id(1).center_vertices
-            )
+            vertices = scenario.lanelet_network.find_lanelet_by_id(1).center_vertices
+            return create_coordinate_system(_extend_path(vertices))
         elif self.scenario_type == "bus_stop_bay":
             # For bay scenario, use lane 2
-            return create_coordinate_system(
-                scenario.lanelet_network.find_lanelet_by_id(2).center_vertices
-            )
+            vertices = scenario.lanelet_network.find_lanelet_by_id(2).center_vertices
+            return create_coordinate_system(_extend_path(vertices))
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
     
@@ -136,17 +153,15 @@ class ArrivingState(PlannerState):
     def create_coordinate_system(self, scenario, planning_problem) -> CoordinateSystem:
         if self.scenario_type == "bus_stop_bulb":
             # For bulb scenario, use lane 2
-            return create_coordinate_system(
-                scenario.lanelet_network.find_lanelet_by_id(2).center_vertices
-            )
+            vertices = scenario.lanelet_network.find_lanelet_by_id(2).center_vertices
+            return create_coordinate_system(_extend_path(vertices))
         elif self.scenario_type == "bus_stop_bay":
             # For bay scenario, use lane 1
-            return create_coordinate_system(
-                scenario.lanelet_network.find_lanelet_by_id(1).center_vertices
-            )
+            vertices = scenario.lanelet_network.find_lanelet_by_id(1).center_vertices
+            return create_coordinate_system(_extend_path(vertices))
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
-    
+
     def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
         if self.scenario_type == "bus_stop_bulb":
             threshold = config.planning.distance_arriving_to_stopping

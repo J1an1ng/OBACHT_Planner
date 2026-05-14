@@ -30,7 +30,7 @@ from commonroad_dc.collision.collision_detection.pycrcc_collision_dispatch impor
 from commonroad_dc.collision.trajectory_queries.trajectory_queries import trajectory_preprocess_obb_sum
 
 # commonroad_rp imports
-from commonroad_rp.state import ReactivePlannerState
+from source.commonroad_rp.state import ReactivePlannerState
 from commonroad_rp.cost_function import CostFunction, DefaultCostFunction
 from commonroad_rp.sampling.base.base_sampling_space import SamplingSpace
 from commonroad_rp.sampling.factory import sampling_space_factory
@@ -48,6 +48,17 @@ logger = logging.getLogger("RP_LOGGER")
 
 # precision value
 _EPS = 1e-5
+
+# Gracefully import the curvilinear projection domain errors (library version may differ)
+try:
+    from commonroad_clcs.pycrccosy import CurvilinearProjectionDomainLongitudinalError  # type: ignore[attr-defined]
+except (ImportError, AttributeError):
+    CurvilinearProjectionDomainLongitudinalError = (ValueError, RuntimeError)  # type: ignore[assignment,misc]
+try:
+    from commonroad_clcs.pycrccosy import CurvilinearProjectionDomainLateralError  # type: ignore[attr-defined]
+except (ImportError, AttributeError):
+    CurvilinearProjectionDomainLateralError = (ValueError, RuntimeError)  # type: ignore[assignment,misc]
+_CurvilinearProjectionDomainError = (CurvilinearProjectionDomainLongitudinalError, CurvilinearProjectionDomainLateralError)
 
 
 class ReactivePlanner(object):
@@ -89,6 +100,9 @@ class ReactivePlanner(object):
 
         # store sampled trajectory set of last run
         self.stored_trajectories: Optional[List[TrajectorySample]] = None
+
+        # store best trajectory sample of last plan run
+        self.best_sample: Optional[Type[TrajectorySample]] = None
 
         # desired speed
         self._desired_speed: Optional[float] = None
@@ -747,6 +761,9 @@ class ReactivePlanner(object):
         # compute output
         planning_result = self._create_output(optimal_trajectory) if optimal_trajectory is not None else None
 
+        # store best sample for post-optimization access
+        self.best_sample = optimal_trajectory
+
         if planning_result is None:
             logger.warning(f"Planner failed to find an optimal trajectory with given sampling configuration!")
 
@@ -995,7 +1012,10 @@ class ReactivePlanner(object):
             if feasible or self._draw_traj_set:
                 for i in range(0, traj_len):
                     # compute (global) Cartesian position
-                    pos: np.ndarray = self._co.convert_to_cartesian_coords(s[i], d[i])
+                    try:
+                        pos: np.ndarray = self._co.convert_to_cartesian_coords(s[i], d[i])
+                    except _CurvilinearProjectionDomainError:
+                        pos = None
                     if pos is not None:
                         x[i] = pos[0]
                         y[i] = pos[1]

@@ -108,6 +108,14 @@ class PlanningConfiguration(BaseConfiguration):
     standstill_lookahead: int = 10
     # safety margin for dynamic obstacles
     safety_margin_dynamic_obstacles: float = 0.0
+    # distance threshold for transitioning from heading_to_next to arriving state
+    distance_heading_to_next_to_arriving: float = 8
+    # distance threshold for transitioning from arriving_to_next to before_stopping state
+    distance_arriving_to_next_to_before_stopping: float = 40
+    # distance threshold for transitioning from arriving to stopping state
+    distance_arriving_to_stopping: float = 5.5
+    # distance threshold for transitioning from before_stopping to stopping state
+    distance_before_stopping_to_stopping: float = 12
 
     def __post_init__(self):
         self.planning_horizon: float = self.dt * self.time_steps_computation
@@ -151,6 +159,7 @@ class SamplingConfiguration(BaseConfiguration):
     d_min: float = -3
     d_max: float = 3
 
+    desire_velocity: float = 5.0
     # number of initial velocity samples (in first sampling level)
     vel_init_samples: int = 3
     # number of initial position samples (in first sampling level)
@@ -279,6 +288,24 @@ class GeneralConfiguration(BaseConfiguration):
 
 
 @dataclass
+class SUMOSIMULATIONConfiguration(BaseConfiguration):
+    """SUMO simulation parameters."""
+
+    # planning steps for sumo simulation
+    sumo_planning_steps: int = 1
+
+
+@dataclass
+class OptimizationConfiguration(BaseConfiguration):
+    """Post-optimization parameters."""
+
+    d_bounds_tolerance: float = 0.5
+    d_bounds_tolerance_for_stopping: float = 0.2
+    v_bounds_tolerance: float = 1.0
+    s_bounds_tolerance: float = 1.0
+
+
+@dataclass
 class ReactivePlannerConfiguration(BaseConfiguration):
     """Configuration parameters for reactive planner."""
 
@@ -287,6 +314,8 @@ class ReactivePlannerConfiguration(BaseConfiguration):
     sampling: SamplingConfiguration = field(default_factory=SamplingConfiguration)
     debug: DebugConfiguration = field(default_factory=DebugConfiguration)
     general: GeneralConfiguration = field(default_factory=GeneralConfiguration)
+    sumo: SUMOSIMULATIONConfiguration = field(default_factory=SUMOSIMULATIONConfiguration)
+    optimization: OptimizationConfiguration = field(default_factory=OptimizationConfiguration)
 
     def __post_init__(self):
         self.scenario: Optional[Scenario] = None

@@ -1,6 +1,9 @@
 import copy
+import logging
 import numpy as np
 import yaml
+
+logger = logging.getLogger("RP_LOGGER")
 import configurations
 import importlib.resources as pkg_resources
 from abc import ABC, abstractmethod
@@ -216,6 +219,17 @@ class BaseStateMachinePlanner(ABC):
 
         trajectory = planner.plan()
         base_plan_time = planner.planning_times[-1] if planner.planning_times else (time.perf_counter() - t0)
+
+        # Fallback when planner returns None
+        if trajectory is None:
+            logger.warning("Planner returned no trajectory; attempting standstill fallback")
+            standstill = planner._compute_standstill_trajectory()
+            if standstill is not None:
+                trajectory = planner._create_output(standstill)
+            if trajectory is None or trajectory[0] is None:
+                logger.warning("Standstill fallback also failed; keeping current state")
+                return planner.x_0, None
+
         # Post-processing optimization
         #for post time
         t1 = time.perf_counter()
@@ -227,7 +241,7 @@ class BaseStateMachinePlanner(ABC):
             else:
                 optimized = planner.post_optimize(planner.best_sample)
             post_time = time.perf_counter() - t1
-            if optimized is not None:
+            if optimized is not None and optimized[0] is not None:
                 trajectory = optimized
 
         # Extract next state and update state list
