@@ -42,6 +42,20 @@ from commonroad_rp.utility.general import shift_orientation, retrieve_desired_ve
 from commonroad_rp.utility.config import ReactivePlannerConfiguration, VehicleConfiguration
 from commonroad_rp.utility.logger import logging_dict
 
+try:
+    from commonroad_clcs.pycrccosy import (  # type: ignore[attr-defined]
+        CartesianProjectionDomainError,
+        CurvilinearProjectionDomainLateralError,
+        CurvilinearProjectionDomainLongitudinalError,
+    )
+    _PROJECTION_DOMAIN_ERRORS = (
+        CartesianProjectionDomainError,
+        CurvilinearProjectionDomainLateralError,
+        CurvilinearProjectionDomainLongitudinalError,
+    )
+except (ImportError, AttributeError):
+    _PROJECTION_DOMAIN_ERRORS = (ValueError, RuntimeError)  # type: ignore[assignment]
+
 
 # get logger
 logger = logging.getLogger("RP_LOGGER")
@@ -573,9 +587,12 @@ class ReactivePlanner(object):
         # compute curvilinear position
         try:
             s, d = self._co.convert_to_curvilinear_coords(x_0.position[0], x_0.position[1])
-        except ValueError:
-            logger.critical("Initial state could not be transformed.")
-            raise ValueError("Initial state could not be transformed.")
+        except (*_PROJECTION_DOMAIN_ERRORS, ValueError):
+            logger.warning(
+                f"Initial state ({x_0.position[0]:.2f}, {x_0.position[1]:.2f}) "
+                f"is outside coordinate system domain – returning None."
+            )
+            return None
 
         # factor for interpolation
         s_idx = np.argmax(self._co.ref_pos > s) - 1
@@ -677,7 +694,12 @@ class ReactivePlanner(object):
         # check if curvilinear initial state is provided and compute if necessary
         if not self.x_0_cl:
             self.x_0_cl = self._compute_initial_states(self.x_0)
-        assert self.x_0_cl is not None, "<ReactivePlanner.plan(): Planner curvilinear initial state is empty!>"
+        if self.x_0_cl is None:
+            logger.warning(
+                "<ReactivePlanner.plan(): Curvilinear initial state is None "
+                "– vehicle likely outside coordinate domain. Skipping planning cycle.>"
+            )
+            return None
 
         # get curvilinear initial states
         x_0_lon, x_0_lat = self.x_0_cl
@@ -774,6 +796,13 @@ class ReactivePlanner(object):
         Computes a standstill trajectory if the vehicle is already at velocity 0
         :return: The TrajectorySample for a standstill trajectory
         """
+        if self.x_0_cl is None:
+            logger.warning(
+                "_compute_standstill_trajectory: x_0_cl is None "
+                "(vehicle outside coordinate domain) – returning None."
+            )
+            return None
+
         # current planner initial state
         x_0 = self.x_0
         x_0_lon, x_0_lat = self.x_0_cl

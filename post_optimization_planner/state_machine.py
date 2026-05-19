@@ -24,6 +24,12 @@ from post_optimization_planner.State import (
 
 from utility.cost_calculate import TrajectoryCostTracker_1
 
+
+class VehicleLeftScenarioError(Exception):
+    """Raised when the vehicle has driven outside the scenario boundary."""
+    pass
+
+
 class BaseStateMachinePlanner(ABC):
     """
     Abstract base class for state machine planners using state classes.
@@ -227,6 +233,15 @@ class BaseStateMachinePlanner(ABC):
             if standstill is not None:
                 trajectory = planner._create_output(standstill)
             if trajectory is None or trajectory[0] is None:
+                if planner.x_0_cl is None:
+                    pos = planner.x_0.position
+                    raise VehicleLeftScenarioError(
+                        f"车辆已到达场景边界 (位置: ({pos[0]:.2f}, {pos[1]:.2f}))"
+                    )
+                print(
+                    f"[ERROR] 规划失败: 无法找到有效轨迹且 standstill fallback 也失败，"
+                    f"位置 ({planner.x_0.position[0]:.2f}, {planner.x_0.position[1]:.2f})，保持当前状态。"
+                )
                 logger.warning("Standstill fallback also failed; keeping current state")
                 return planner.x_0, None
 

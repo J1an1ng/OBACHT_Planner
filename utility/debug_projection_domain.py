@@ -29,6 +29,7 @@ Usage
 import copy
 import os
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -51,13 +52,51 @@ from commonroad.common.file_reader import CommonRoadFileReader
 from commonroad_clcs.clcs import CurvilinearCoordinateSystem
 
 try:
-    from commonroad_clcs.pycrccosy import CurvilinearProjectionDomainLongitudinalError  # type: ignore[attr-defined]
+    from commonroad_clcs.pycrccosy import (  # type: ignore[attr-defined]
+        CartesianProjectionDomainError,
+        CurvilinearProjectionDomainLateralError,
+        CurvilinearProjectionDomainLongitudinalError,
+    )
+    _PROJECTION_DOMAIN_ERRORS = (
+        CartesianProjectionDomainError,
+        CurvilinearProjectionDomainLateralError,
+        CurvilinearProjectionDomainLongitudinalError,
+    )
 except (ImportError, AttributeError):
     # Treat any ValueError/RuntimeError with the matching message as the trigger
+    CartesianProjectionDomainError = (ValueError, RuntimeError)  # type: ignore[assignment,misc]
+    CurvilinearProjectionDomainLateralError = (ValueError, RuntimeError)  # type: ignore[assignment,misc]
     CurvilinearProjectionDomainLongitudinalError = (ValueError, RuntimeError)  # type: ignore[assignment,misc]
+    _PROJECTION_DOMAIN_ERRORS = (ValueError, RuntimeError)  # type: ignore[assignment,misc]
 
 from source.commonroad_rp.reactive_planner import ReactivePlanner
 from source.commonroad_rp.trajectories import FeasibilityStatus
+from post_optimization_planner.state_machine import VehicleLeftScenarioError
+
+# ── tee: duplicate stdout/stderr to a log file ───────────────────────────────
+class _TeeStream:
+    """Write to both the original stream and a log file simultaneously."""
+    def __init__(self, original, log_file):
+        self._original = original
+        self._log = log_file
+
+    def write(self, data):
+        self._original.write(data)
+        self._original.flush()
+        self._log.write(data)
+        self._log.flush()
+
+    def flush(self):
+        self._original.flush()
+        self._log.flush()
+
+    def fileno(self):
+        return self._original.fileno()
+
+    # Proxy every other attribute to the original stream
+    def __getattr__(self, name):
+        return getattr(self._original, name)
+
 
 # ── global state ─────────────────────────────────────────────────────────────
 _plan_records: List[dict] = []
@@ -74,7 +113,20 @@ def _patched_plan(self, *args, **kwargs):
     # Make _check_kinematics run in the main process so exceptions propagate.
     if hasattr(self, "config") and hasattr(self.config, "debug"):
         self.config.debug.multiproc = False
-    return _original_plan(self, *args, **kwargs)
+    _t_start = time.perf_counter()
+    try:
+        result = _original_plan(self, *args, **kwargs)
+    finally:
+        _elapsed_ms = (time.perf_counter() - _t_start) * 1000.0
+        if _plan_records:
+            _plan_records[-1]["elapsed_ms"] = _elapsed_ms
+        step_idx = len(_plan_records) - 1 if _plan_records else -1
+        sm_state = _plan_records[-1]["sm_state"] if _plan_records else "UNKNOWN"
+        print(
+            f"[timing] step {step_idx:>4d}  SM={sm_state:<16s}  "
+            f"elapsed={_elapsed_ms:7.1f} ms"
+        )
+    return result
 
 ReactivePlanner.plan = _patched_plan
 
@@ -94,6 +146,7 @@ def _patched_compute_initial_states(self, x_0):
         "coord_sys":   self._co,
         "error":       None,
         "bad_sd":      None,   # (s, d) that fell outside domain
+        "elapsed_ms":  None,
     }
     _plan_records.append(record)
 
@@ -138,8 +191,8 @@ def _patched_check_kinematics(self, trajectories, queue_1=None, queue_2=None):
             f, inf = result
             feasible_out.extend(f)
             infeasible_out.extend(inf)
-        except CurvilinearProjectionDomainLongitudinalError as exc:
-            # Mark trajectory infeasible and record the event
+        except _PROJECTION_DOMAIN_ERRORS as exc:
+            # Mark trajectory infeasible and record the event (Lateral or Longitudinal)
             traj.feasibility_label = FeasibilityStatus.INFEASIBLE_KINEMATIC
             infeasible_out.append(traj)
 
@@ -150,8 +203,9 @@ def _patched_check_kinematics(self, trajectories, queue_1=None, queue_2=None):
                 bad_sd = _extract_bad_sd(traj, self._co)
                 rec["bad_sd"] = bad_sd
                 _first_domain_error = rec
+                err_type = type(exc).__name__
                 print(
-                    f"\n[debug] CurvilinearProjectionDomainLongitudinalError at step "
+                    f"\n[debug] {err_type} at step "
                     f"{rec['step']} (SM={rec['sm_state']}), "
                     f"pos=({rec['position'][0]:.2f}, {rec['position'][1]:.2f})"
                     + (f", bad s={bad_sd[0]:.2f}" if bad_sd else "")
@@ -228,14 +282,20 @@ def run_simulation():
 
     try:
         simulate_with_planner(interactive_scenario_path=str(scenario_dir))
-    except CurvilinearProjectionDomainLongitudinalError as exc:
+    except VehicleLeftScenarioError as exc:
+        print(f"[INFO] {exc}")
+    except _PROJECTION_DOMAIN_ERRORS as exc:
         if _plan_records:
             _plan_records[-1]["error"] = exc
-        print("[debug] Caught CurvilinearProjectionDomainLongitudinalError (initial state).")
+        print(f"[debug] Caught {type(exc).__name__} (initial state).")
     except Exception as exc:
         tb = traceback.format_exc()
-        if "CurvilinearProjectionDomainLongitudinalError" in tb or \
-           "Longitudinal coordinate outside" in tb:
+        if any(kw in tb for kw in (
+            "CurvilinearProjectionDomainLongitudinalError",
+            "CurvilinearProjectionDomainLateralError",
+            "Longitudinal coordinate outside",
+            "Lateral coordinate outside",
+        )):
             print(f"[debug] Projection domain error wrapped in {type(exc).__name__}")
         else:
             print(f"[debug] Unexpected exception: {exc}")
@@ -470,15 +530,17 @@ def visualise(cfg: dict, bus_stop: str):
     # ── info table ─────────────────────────────────────────────────────────────
     ax_tbl.axis("off")
 
-    headers = ["Step", "SM State", "x [m]", "y [m]", "v [m/s]", "Error"]
+    headers = ["Step", "SM State", "x [m]", "y [m]", "v [m/s]", "t [ms]", "Error"]
     rows = []
     for rec in _plan_records:
+        t_str = f"{rec['elapsed_ms']:.0f}" if rec["elapsed_ms"] is not None else "-"
         rows.append([
             rec["step"],
             rec["sm_state"],
             f"{rec['position'][0]:.2f}",
             f"{rec['position'][1]:.2f}",
             f"{rec['velocity']:.2f}",
+            t_str,
             "YES ←" if rec["error"] is not None else "",
         ])
 
@@ -534,7 +596,16 @@ def visualise(cfg: dict, bus_stop: str):
 def print_summary():
     error_idx = next((i for i, r in enumerate(_plan_records) if r["error"] is not None), None)
     print("\n" + "=" * 65)
+    times_ms = [r["elapsed_ms"] for r in _plan_records if r["elapsed_ms"] is not None]
     print(f"  Total planning steps recorded : {len(_plan_records)}")
+    if times_ms:
+        print(f"  Planning time  min / mean / max : "
+              f"{min(times_ms):.1f} / {sum(times_ms)/len(times_ms):.1f} / {max(times_ms):.1f} ms")
+        slowest = max(range(len(_plan_records)),
+                      key=lambda i: _plan_records[i]["elapsed_ms"] or 0)
+        print(f"  Slowest step  : {slowest}  "
+              f"({_plan_records[slowest]['elapsed_ms']:.1f} ms, "
+              f"SM={_plan_records[slowest]['sm_state']})")
     if error_idx is not None:
         rec = _plan_records[error_idx]
         print(f"  *** ERROR at step {error_idx} ***")
@@ -580,6 +651,22 @@ def print_summary():
 
 # ── entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    cfg, bus_stop = run_simulation()
-    print_summary()
-    visualise(cfg, bus_stop)
+    # ── set up logging to file ────────────────────────────────────────────────
+    _log_dir = path_root / "experiments" / "output_result"
+    _log_dir.mkdir(parents=True, exist_ok=True)
+    _log_ts = time.strftime("%Y%m%d_%H%M%S")
+    _log_path = _log_dir / f"debug_projection_domain_{_log_ts}.log"
+    _log_file = open(_log_path, "w", encoding="utf-8", buffering=1)
+    sys.stdout = _TeeStream(sys.__stdout__, _log_file)
+    sys.stderr = _TeeStream(sys.__stderr__, _log_file)
+    print(f"[log] Output is being recorded to: {_log_path}")
+    # ─────────────────────────────────────────────────────────────────────────
+    try:
+        cfg, bus_stop = run_simulation()
+        print_summary()
+        visualise(cfg, bus_stop)
+    finally:
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        _log_file.close()
+        print(f"[log] Log saved to: {_log_path}")

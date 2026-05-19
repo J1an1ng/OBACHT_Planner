@@ -1,8 +1,8 @@
 planning:
   dt: 0.1
   replanning_frequency: 10
-  time_steps_computation: 80
-  low_vel_mode_threshold : -3.0
+  time_steps_computation: 50
+  low_vel_mode_threshold: 3.0
 vehicle:
   # CR vehicle type (see commonroad-vehicle-models): #1: Ford Escort, #2: BMW 320i, 3 = VW Vanagon
   id_type_vehicle: 2
@@ -19,13 +19,13 @@ debug:
 
 sampling:
   t_min: 0.2
-  d_max: 0.1
-  d_min: -0.1
+  d_max: 0.8
+  d_min: -0.8
   v_max: 0
   v_min: 0
   longitudinal_mode: stopping
-  s_max: 0.1
-  s_min: -0.1
+  s_max: 5.0
+  s_min: -0.5
 
 sumo:
   sumo_planning_steps: 10

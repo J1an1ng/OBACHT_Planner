@@ -7,6 +7,18 @@ from source.commonroad_rp.utility.utils_coordinate_system import interpolate_ang
 from scipy.optimize import minimize
 logger = logging.getLogger("RP_LOGGER")
 
+try:
+    from commonroad_clcs.pycrccosy import (  # type: ignore[attr-defined]
+        CurvilinearProjectionDomainLateralError,
+        CurvilinearProjectionDomainLongitudinalError,
+    )
+    _PROJECTION_DOMAIN_ERRORS = (
+        CurvilinearProjectionDomainLateralError,
+        CurvilinearProjectionDomainLongitudinalError,
+    )
+except (ImportError, AttributeError):
+    _PROJECTION_DOMAIN_ERRORS = (ValueError, RuntimeError)  # type: ignore[assignment]
+
 
 from source.commonroad_rp.trajectories import (
     CartesianSample,
@@ -544,11 +556,15 @@ class PostOptimizerPlanner(ReactivePlanner):
         # 6) If still feasible, convert (s, d) back to global coordinates (x, y) and check if within reference line projection range
         if feasible:
             for i in range(traj_len):
-                pos = self._co.convert_to_cartesian_coords(s[i], d[i])
+                try:
+                    pos = self._co.convert_to_cartesian_coords(s[i], d[i])
+                except _PROJECTION_DOMAIN_ERRORS:
+                    # s or d falls outside the projection domain – treat as infeasible
+                    pos = None
                 if pos is None:
                     # Outside reference line projectable area
                     feasible = False
-                    # break
+                    break
                 x[i], y[i] = pos
 
         # 7) Final feasible/infeasible determination
