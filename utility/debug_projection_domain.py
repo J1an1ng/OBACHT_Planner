@@ -101,60 +101,124 @@ class _TeeStream:
 # ── global state ─────────────────────────────────────────────────────────────
 _plan_records: List[dict] = []
 _current_sm_state: str = "UNKNOWN"
-_first_domain_error: Optional[dict] = None   # set when the first bad (s,d) is caught
+_first_domain_error: Optional[dict] = None    # set when the first bad (s,d) is caught
+_active_plan_record: Optional[dict] = None    # the record being filled during plan()
+_pre_plan_states: list = []                   # _compute_initial_states calls from outside plan()
+_plan_call_count: int = 0                     # total plan() invocations (for sanity checks)
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
-# ║  PATCH 1 – force single-process mode
+# ║  PATCH 1 – force single-process mode + one record per plan() call
 # ╚══════════════════════════════════════════════════════════════════════════════
 _original_plan = ReactivePlanner.plan
 
 def _patched_plan(self, *args, **kwargs):
+    global _active_plan_record, _plan_call_count
+
     # Make _check_kinematics run in the main process so exceptions propagate.
     if hasattr(self, "config") and hasattr(self.config, "debug"):
         self.config.debug.multiproc = False
+
+    # ── create exactly one record for this plan() call ────────────────────────
+    record: dict = {
+        "step":                         len(_plan_records),
+        "sm_state":                     _current_sm_state,
+        "position":                     None,   # filled by _compute_initial_states
+        "velocity":                     None,
+        "orientation":                  None,
+        "coord_sys":                    None,
+        "error":                        None,
+        "bad_sd":                       None,
+        "elapsed_ms":                   None,
+        "compute_initial_states_calls": 0,
+    }
+    # Pre-populate from the most recent pre-plan state (set_x_0 call) as a
+    # fallback in case _compute_initial_states is not called inside plan().
+    if _pre_plan_states:
+        pre = _pre_plan_states[-1]
+        record["position"]    = pre["position"]
+        record["velocity"]    = pre["velocity"]
+        record["orientation"] = pre["orientation"]
+        record["coord_sys"]   = pre["coord_sys"]
+
+    _plan_records.append(record)
+    _active_plan_record = record
+    _plan_call_count += 1
+
     _t_start = time.perf_counter()
     try:
         result = _original_plan(self, *args, **kwargs)
+    except Exception as exc:
+        record["error"] = exc
+        raise
     finally:
         _elapsed_ms = (time.perf_counter() - _t_start) * 1000.0
-        if _plan_records:
-            _plan_records[-1]["elapsed_ms"] = _elapsed_ms
-        step_idx = len(_plan_records) - 1 if _plan_records else -1
-        sm_state = _plan_records[-1]["sm_state"] if _plan_records else "UNKNOWN"
+        record["elapsed_ms"] = _elapsed_ms
+        _active_plan_record = None
+
+        step_idx = record["step"]
+        sm_state = record["sm_state"]
+        cis_calls = record["compute_initial_states_calls"]
+        extra = f"  [init_calls={cis_calls}]" if cis_calls != 1 else ""
         print(
             f"[timing] step {step_idx:>4d}  SM={sm_state:<16s}  "
-            f"elapsed={_elapsed_ms:7.1f} ms"
+            f"elapsed={_elapsed_ms:7.1f} ms{extra}"
         )
+
+        # ── periodic sanity check ─────────────────────────────────────────────
+        if _plan_call_count % 50 == 0:
+            normal = [r for r in _plan_records if "source" not in r]
+            bad_time = [r for r in normal if r["elapsed_ms"] is None]
+            bad_cis  = [r for r in normal if r["compute_initial_states_calls"] < 1]
+            if len(normal) != _plan_call_count:
+                print(f"[sanity] WARNING: {len(normal)} normal records "
+                      f"but {_plan_call_count} plan calls")
+            elif bad_time:
+                print(f"[sanity] WARNING: {len(bad_time)} record(s) with elapsed_ms=None")
+            elif bad_cis:
+                print(f"[sanity] WARNING: {len(bad_cis)} record(s) with "
+                      f"compute_initial_states_calls=0")
+            else:
+                print(f"[sanity] OK at plan call {_plan_call_count}: "
+                      f"all {len(normal)} records valid.")
+
     return result
 
 ReactivePlanner.plan = _patched_plan
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
-# ║  PATCH 2 – record vehicle state + coord-sys before each planning attempt
+# ║  PATCH 2 – update the active plan record; do NOT append a new record
 # ╚══════════════════════════════════════════════════════════════════════════════
 _original_compute_initial_states = ReactivePlanner._compute_initial_states
 
 def _patched_compute_initial_states(self, x_0):
-    record = {
-        "step":        len(_plan_records),
-        "sm_state":    _current_sm_state,
-        "position":    copy.deepcopy(x_0.position),
-        "velocity":    x_0.velocity,
-        "orientation": x_0.orientation,
-        "coord_sys":   self._co,
-        "error":       None,
-        "bad_sd":      None,   # (s, d) that fell outside domain
-        "elapsed_ms":  None,
-    }
-    _plan_records.append(record)
+    global _active_plan_record, _pre_plan_states
+
+    if _active_plan_record is not None:
+        # Inside plan(): update the single active record with the latest state.
+        _active_plan_record["compute_initial_states_calls"] += 1
+        _active_plan_record["position"]    = copy.deepcopy(x_0.position)
+        _active_plan_record["velocity"]    = x_0.velocity
+        _active_plan_record["orientation"] = x_0.orientation
+        _active_plan_record["coord_sys"]   = self._co
+    else:
+        # Outside plan() (e.g. called from set_x_0) – store as pre-plan
+        # diagnostic; do NOT touch _plan_records.
+        _pre_plan_states.append({
+            "source":      "outside_plan",
+            "sm_state":    _current_sm_state,
+            "position":    copy.deepcopy(x_0.position),
+            "velocity":    x_0.velocity,
+            "orientation": x_0.orientation,
+            "coord_sys":   self._co,
+        })
 
     try:
         return _original_compute_initial_states(self, x_0)
     except CurvilinearProjectionDomainLongitudinalError as exc:
-        # vehicle itself is outside domain (initial state projection failed)
-        record["error"] = exc
+        if _active_plan_record is not None:
+            _active_plan_record["error"] = exc
         raise
 
 ReactivePlanner._compute_initial_states = _patched_compute_initial_states
