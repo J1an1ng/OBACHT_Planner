@@ -19,7 +19,7 @@ debug:
   save_plots: false
   draw_traj_set: false
   draw_icons: true
-  multiproc: true
+  multiproc: false
   num_workers: 6
 
 sampling:
