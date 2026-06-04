@@ -1,8 +1,10 @@
 # third party
+import os
+import matplotlib
+matplotlib.use(os.environ.get("MPLBACKEND") or "Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from pathlib import Path
-import os
 import pandas as pd
 from typing import Optional
 import yaml

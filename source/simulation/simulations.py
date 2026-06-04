@@ -31,7 +31,6 @@ from sumocr.interface.sumo_simulation import SumoSimulation
 from sumocr.scenario import ScenarioWrapper
 from sumocr.sumo_config.default import DefaultConfig
 from sumocr.sumo_docker.interface.docker_interface import SumoInterface
-# from post_optimization_planner.state_machine_planner import simulate_state_machine
 from utility.visualization import plot_ksstate_trajectory,to_dataframe,plot_state
 from source.simulation.video import create_video
 from post_optimization_planner.state_machine import simulate_state_machine
@@ -378,28 +377,6 @@ def simulate_scenario(
                     # ====== Example motion planner 2: CommonRoad reactive planner
                     # Please see more details about this exemplary planner at
                     # https://commonroad.in.tum.de/tools/commonroad-reactive-planner
-                    # if scenario_type == "bus_stop_bay":
-                    #     next_state = (
-                    #         simulate_state_machine_with_post_optimization_for_bus_bay(
-                    #             current_scenario,
-                    #             state_current_ego,
-                    #             list(
-                    #                 planning_problem_set.planning_problem_dict.values()
-                    #             )[0],
-                    #             state_list,
-                    #         )
-                    #     )
-
-                        # next_state = (
-                        #     simulate_state_machine_for_bus_bulb(
-                        #         current_scenario,
-                        #         state_current_ego,
-                        #         list(
-                        #             planning_problem_set.planning_problem_dict.values()
-                        #         )[0],
-                        #         state_list,
-                        #     )
-                        # )
                     next_state = simulate_state_machine(
                         current_scenario, state_current_ego,
                         list(planning_problem_set.planning_problem_dict.values())[0],
@@ -429,10 +406,9 @@ def simulate_scenario(
             # df = to_dataframe(traj, save_path="traj.csv")
 
             if cfg["debug"].get("plot_png"):
-                opt = "with" if cfg["debug"].get("use_post_opt") else "without"
                 plot_ksstate_trajectory(
                     traj,
-                    f'trajectory for {cfg["scenario"]["type"]} {opt} optimization'
+                    f'trajectory for {cfg["scenario"]["type"]} CommonRoad RP only'
                 )
 
 

@@ -7,5 +7,4 @@ debug:
 
   plot_png: True
 
-  use_post_opt: True
-
+  use_post_opt: False

@@ -92,7 +92,13 @@ class DepartingState(PlannerState):
     def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
         # DEPARTING doesn't have automatic transitions in the current implementation
 
-        if next_state.velocity>=config.sampling.desire_velocity and next_state.orientation<0.00001 and next_state.acceleration<0.00001:
+        orientation = abs(float(getattr(next_state, "orientation", 0.0)))
+        acceleration = abs(float(getattr(next_state, "acceleration", 0.0)))
+        if (
+            next_state.velocity >= config.sampling.desire_velocity
+            and orientation < 0.02
+            and acceleration < 0.2
+        ):
              return HeadingState(self.scenario_type)
         return None
     
@@ -187,12 +193,12 @@ class BeforeStoppingState(PlannerState):
         if self.scenario_type != "bus_stop_bay":
             raise ValueError(f"BEFORE_STOPPING state only valid for bus_stop_bay scenario")
         
-        # Create middle path coordinate system (y=-7.5)
+        goal_y = planning_problem.goal.state_list[0].position.center[1]
         left_vertex = scenario.lanelet_network.find_lanelet_by_id(1).left_vertices[0][0]
         right_vertex = scenario.lanelet_network.find_lanelet_by_id(1).left_vertices[-1][0]
         num = (right_vertex - left_vertex) * 10
         x_values = np.linspace(left_vertex, right_vertex, int(num))
-        y_values = np.full_like(x_values, -7.5)
+        y_values = np.full_like(x_values, goal_y)
         return create_coordinate_system(np.column_stack((x_values, y_values)))
     
     def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
@@ -229,7 +235,7 @@ class StoppingState(PlannerState):
             right_vertex = scenario.lanelet_network.find_lanelet_by_id(1).left_vertices[-1][0]
             num = (right_vertex - left_vertex) * 10
             x_values = np.linspace(left_vertex, right_vertex, int(num))
-            y_values = np.full_like(x_values, -7.5)
+            y_values = np.full_like(x_values, goal_y)
             return create_coordinate_system(np.column_stack((x_values, y_values)))
         else:
             raise ValueError(f"Unknown scenario type: {self.scenario_type}")
