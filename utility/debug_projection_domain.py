@@ -508,7 +508,15 @@ def _diagnose_transition_blockers(state_name: str, next_state, config, goal_x: f
             threshold = getattr(config.planning, "distance_arriving_to_next_to_before_stopping", None)
         if threshold is not None and distance_to_goal >= float(threshold):
             blockers.append(f"distance {distance_to_goal:.2f} >= threshold {float(threshold):.2f}")
-    elif state_name.startswith("BEFORE_STOPPING"):
+    elif state_name == "BEFORE_STOPPING_ALIGN":
+        threshold = float(_planning_attr(config, "distance_arriving_to_next_to_before_stopping", 0.0) or 0.0)
+        if distance_to_goal >= threshold:
+            blockers.append(f"distance {distance_to_goal:.2f} >= merge threshold {threshold:.2f}")
+    elif state_name == "BEFORE_STOPPING_MERGE":
+        threshold = float(_planning_attr(config, "distance_arriving_to_stopping", 0.0) or 0.0)
+        if distance_to_goal >= threshold:
+            blockers.append(f"distance {distance_to_goal:.2f} >= final threshold {threshold:.2f}")
+    elif state_name in ("BEFORE_STOPPING_FINAL", "BEFORE_STOPPING"):
         threshold = float(_planning_attr(config, "distance_before_stopping_to_stopping", 0.0) or 0.0)
         if distance_to_goal >= threshold:
             blockers.append(f"distance {distance_to_goal:.2f} >= stopping threshold {threshold:.2f}")
@@ -532,7 +540,7 @@ def _patched_check_state_transition(self, next_state, config) -> None:
 
     if after != before:
         print(f"[transition] {before} -> {after}")
-    elif blockers and before in ("DEPARTING", "BEFORE_STOPPING"):
+    elif blockers and (before == "DEPARTING" or before.startswith("BEFORE_STOPPING")):
         print(f"[transition] {before} held: {'; '.join(blockers)}")
 
 _sm_module.BaseStateMachinePlanner._check_state_transition = _patched_check_state_transition
@@ -621,14 +629,15 @@ _STATE_COLOURS = {
     "HEADING":         "#4CAF50",
     "ARRIVING":        "#FF9800",
     "BEFORE_STOPPING": "#9C27B0",
+    "BEFORE_STOPPING_ALIGN": "#5E35B1",
+    "BEFORE_STOPPING_MERGE": "#7E57C2",
+    "BEFORE_STOPPING_FINAL": "#AB47BC",
     "STOPPING":        "#F44336",
     "UNKNOWN":         "#9E9E9E",
 }
 
 
 def _state_colour(name: str) -> str:
-    if name.startswith("BEFORE_STOPPING_"):
-        return "#7E57C2"
     return _STATE_COLOURS.get(name, "#9E9E9E")
 
 
@@ -673,8 +682,6 @@ def _draw_projection_domain(ax, co: CurvilinearCoordinateSystem,
 
 
 def _legend_state_name(name: str) -> str:
-    if name.startswith("BEFORE_STOPPING_"):
-        return "BEFORE_STOPPING"
     return name
 
 

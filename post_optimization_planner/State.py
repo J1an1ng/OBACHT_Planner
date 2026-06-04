@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Optional
 import numpy as np
 from source.commonroad_rp.utility.utils_coordinate_system import CoordinateSystem, create_coordinate_system
 
@@ -176,12 +176,12 @@ class ArrivingState(PlannerState):
         elif self.scenario_type == "bus_stop_bay":
             threshold = config.planning.distance_arriving_to_next_to_before_stopping
             if abs(goal_x - next_state.position[0]) < threshold:
-                return BeforeStoppingState(self.scenario_type)
+                return BeforeStoppingAlignState(self.scenario_type)
         return None
 
 
 class BeforeStoppingState(PlannerState):
-    """BEFORE_STOPPING state implementation (only for bay scenario)"""
+    """Base BEFORE_STOPPING state implementation (only for bay scenario)."""
     
     def get_config_filename(self) -> str:
         return "before_stopping.yaml"
@@ -203,12 +203,72 @@ class BeforeStoppingState(PlannerState):
     
     def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
         threshold = config.planning.distance_before_stopping_to_stopping
-        if abs(goal_x - next_state.position[0]) < threshold:
+        distance_to_goal = goal_x - float(next_state.position[0])
+        velocity = float(getattr(next_state, "velocity", 0.0))
+        if abs(distance_to_goal) < threshold or (distance_to_goal < 0.0 and velocity < 0.8):
             return StoppingState(self.scenario_type)
         return None
     
     def is_valid_for_scenario(self) -> bool:
         return self.scenario_type == "bus_stop_bay"
+
+
+class BeforeStoppingAlignState(BeforeStoppingState):
+    """Stabilize pose before starting the bay merge."""
+
+    def get_config_filename(self) -> str:
+        return "before_stopping_align.yaml"
+
+    def get_state_name(self) -> str:
+        return "BEFORE_STOPPING_ALIGN"
+
+    def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
+        threshold = config.planning.distance_arriving_to_next_to_before_stopping
+        steering = abs(float(getattr(next_state, "steering_angle", 0.0)))
+        yaw_rate = abs(float(getattr(next_state, "yaw_rate", 0.0)))
+        max_steering = 0.08
+        max_yaw_rate = 0.06
+        if (
+            abs(goal_x - next_state.position[0]) < threshold
+            and steering < max_steering
+            and yaw_rate < max_yaw_rate
+        ):
+            return BeforeStoppingMergeState(self.scenario_type)
+        return None
+
+
+class BeforeStoppingMergeState(BeforeStoppingState):
+    """Perform the curvature-friendly lateral shift into the bay."""
+
+    def get_config_filename(self) -> str:
+        return "before_stopping_merge.yaml"
+
+    def get_state_name(self) -> str:
+        return "BEFORE_STOPPING_MERGE"
+
+    def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
+        threshold = config.planning.distance_arriving_to_stopping
+        if abs(goal_x - next_state.position[0]) < threshold:
+            return BeforeStoppingFinalState(self.scenario_type)
+        return None
+
+
+class BeforeStoppingFinalState(BeforeStoppingState):
+    """Prepare for the final STOPPING state inside the goal lane."""
+
+    def get_config_filename(self) -> str:
+        return "before_stopping_final.yaml"
+
+    def get_state_name(self) -> str:
+        return "BEFORE_STOPPING_FINAL"
+
+    def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
+        threshold = config.planning.distance_before_stopping_to_stopping
+        distance_to_goal = goal_x - float(next_state.position[0])
+        velocity = float(getattr(next_state, "velocity", 0.0))
+        if abs(distance_to_goal) < threshold or (distance_to_goal < 0.0 and velocity < 0.8):
+            return StoppingState(self.scenario_type)
+        return None
 
 
 class StoppingState(PlannerState):
@@ -253,6 +313,9 @@ def create_initial_state(scenario_type: str, state_name: str = "HEADING") -> Pla
         "HEADING": HeadingState,
         "ARRIVING": ArrivingState,
         "BEFORE_STOPPING": BeforeStoppingState,
+        "BEFORE_STOPPING_ALIGN": BeforeStoppingAlignState,
+        "BEFORE_STOPPING_MERGE": BeforeStoppingMergeState,
+        "BEFORE_STOPPING_FINAL": BeforeStoppingFinalState,
         "STOPPING": StoppingState,
     }
     
@@ -274,6 +337,14 @@ def get_valid_states_for_scenario(scenario_type: str) -> set:
     if scenario_type == "bus_stop_bulb":
         return {"DEPARTING", "HEADING", "ARRIVING", "STOPPING"}
     elif scenario_type == "bus_stop_bay":
-        return {"DEPARTING", "HEADING", "ARRIVING", "BEFORE_STOPPING", "STOPPING"}
+        return {
+            "DEPARTING",
+            "HEADING",
+            "ARRIVING",
+            "BEFORE_STOPPING_ALIGN",
+            "BEFORE_STOPPING_MERGE",
+            "BEFORE_STOPPING_FINAL",
+            "STOPPING",
+        }
     else:
         raise ValueError(f"Unknown scenario type: {scenario_type}")

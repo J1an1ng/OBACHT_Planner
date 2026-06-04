@@ -19,7 +19,8 @@ import time
 # Import state classes
 from post_optimization_planner.State import (
     PlannerState, DepartingState, HeadingState, ArrivingState,
-    BeforeStoppingState, StoppingState, create_initial_state,
+    BeforeStoppingState, BeforeStoppingAlignState, BeforeStoppingMergeState,
+    BeforeStoppingFinalState, StoppingState, create_initial_state,
 )
 
 from utility.cost_calculate import TrajectoryCostTracker_1
@@ -125,6 +126,9 @@ class BaseStateMachinePlanner(ABC):
             HeadingState: self._execute_heading,
             ArrivingState: self._execute_arriving,
             BeforeStoppingState: self._execute_before_stopping,
+            BeforeStoppingAlignState: self._execute_before_stopping,
+            BeforeStoppingMergeState: self._execute_before_stopping,
+            BeforeStoppingFinalState: self._execute_before_stopping,
             StoppingState: self._execute_stopping,
         }
 
@@ -168,6 +172,15 @@ class BaseStateMachinePlanner(ABC):
 
             elif isinstance(state, DepartingState):
                 print("State Description: Vehicle is departing from current position")
+
+            elif isinstance(state, BeforeStoppingAlignState):
+                print("State Description: Vehicle is aligning pose before bay merge")
+
+            elif isinstance(state, BeforeStoppingMergeState):
+                print("State Description: Vehicle is merging into the bus bay")
+
+            elif isinstance(state, BeforeStoppingFinalState):
+                print("State Description: Vehicle is preparing for final stop")
 
             elif isinstance(state, BeforeStoppingState):
                 print("State Description: Vehicle is preparing to stop (bay scenario only)")
@@ -507,7 +520,8 @@ class BusStopBulbPlanner(BaseStateMachinePlanner):
 class BusStopBayPlanner(BaseStateMachinePlanner):
     """
     State machine planner for bus stop bay scenarios.
-    State flow: DEPARTING → HEADING → ARRIVING → BEFORE_STOPPING → STOPPING
+    State flow: DEPARTING → HEADING → ARRIVING → BEFORE_STOPPING_ALIGN
+                → BEFORE_STOPPING_MERGE → BEFORE_STOPPING_FINAL → STOPPING
     """
 
     def _initialize_goal_positions(self):
@@ -558,7 +572,7 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
 
         denom = max(merge_end_x - merge_start_x, 1e-6)
         progress = _clip01((x_values - merge_start_x) / denom)
-        progress = progress * progress * (3.0 - 2.0 * progress)
+        progress = progress ** 3 * (10.0 + progress * (-15.0 + 6.0 * progress))
         y_values = start_y * (1.0 - progress) + target_y_values * progress
         return np.column_stack((x_values, y_values))
 
@@ -591,87 +605,31 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
         return next_state
 
     def _execute_before_stopping(self, state_current: State, state_list: list) -> State:
-        """Execute BEFORE_STOPPING state for bay scenario"""
-        coord_sys = self._get_before_stopping_coord_system(state_current)
+        """Execute staged BEFORE_STOPPING states for bay scenario."""
+        coord_sys = self._get_before_stopping_coord_system(self.current_state, state_current)
         planner, config = self._create_planner(self.current_state, coord_sys, state_current)
-        virtual_state_name, progress, distance_to_goal = self._smooth_before_stopping_config(config, state_current)
-        self._active_planning_state_name = virtual_state_name
-        self._regularize_transition_initial_state(planner, progress)
 
-        planner._desired_speed = 0
-        planner.set_desired_velocity(
-            current_speed=state_current.velocity,
-            desired_velocity=config.sampling.desire_velocity,
-        )
-        if progress > 0.2:
-            planner.set_v_sampling_parameters(
-                0.0,
-                max(float(state_current.velocity), float(config.sampling.desire_velocity)) + 0.5,
+        if isinstance(self.current_state, BeforeStoppingFinalState):
+            planner._low_vel_mode = True
+            planner._desired_speed = 0
+            goal_s, _ = planner.coordinate_system.convert_to_curvilinear_coords(self.goal_x, self.goal_y)
+            planner.set_desired_lon_position(lon_position=goal_s)
+        else:
+            planner._desired_speed = config.sampling.desire_velocity
+            planner.set_desired_velocity(
+                current_speed=state_current.velocity,
+                desired_velocity=config.sampling.desire_velocity,
             )
 
         fallback_count_before = len(self.fallback_logs)
         next_state, _ = self._plan_and_optimize(planner, config, state_list)
         if len(self.fallback_logs) > fallback_count_before:
-            self.fallback_logs[-1]["before_stopping_progress"] = progress
-            self.fallback_logs[-1]["distance_to_goal_x"] = distance_to_goal
+            self.fallback_logs[-1]["distance_to_goal_x"] = abs(
+                float(self.goal_x) - float(state_current.position[0])
+            )
         self._check_state_transition(next_state, config)
 
         return next_state
-
-    def _smooth_before_stopping_config(self, config: Any, state_current: State) -> Tuple[str, float, float]:
-        distance_to_goal = abs(float(self.goal_x) - float(state_current.position[0]))
-        transition_threshold = float(getattr(config.planning, "distance_before_stopping_to_stopping", 3.0))
-        horizon = max(
-            float(config.planning.dt),
-            float(config.planning.dt) * float(config.planning.time_steps_computation),
-        )
-        current_v = max(0.0, float(state_current.velocity))
-        a_max = float(getattr(config.vehicle, "a_max", 2.0))
-
-        if self._before_stopping_entry_distance is None or distance_to_goal > self._before_stopping_entry_distance:
-            self._before_stopping_entry_distance = max(distance_to_goal, transition_threshold + 1.0)
-
-        comfort_decel = max(0.4, min(0.8 * a_max, 1.4))
-        braking_distance = current_v ** 2 / max(2.0 * comfort_decel, 1e-6)
-        smoothing_span = max(
-            8.0,
-            current_v * horizon,
-            braking_distance + current_v * 1.5,
-            self._before_stopping_entry_distance - transition_threshold,
-        )
-        progress = _clip01((transition_threshold + smoothing_span - distance_to_goal) / smoothing_span)
-
-        n_substates = 4
-        sub_idx = min(n_substates, max(1, int(np.floor(progress * n_substates)) + 1))
-        virtual_state_name = f"BEFORE_STOPPING_{sub_idx}"
-
-        min_pre_stop_speed = 0.35
-        base_desired = max(min_pre_stop_speed, float(config.sampling.desire_velocity))
-        target_v = base_desired * (1.0 - progress) + min_pre_stop_speed * progress
-        max_drop = comfort_decel * horizon
-        target_v = max(min_pre_stop_speed, current_v - max_drop, target_v)
-        config.sampling.desire_velocity = float(min(base_desired, target_v))
-
-        if hasattr(config.sampling, "d_min") and hasattr(config.sampling, "d_max"):
-            width_scale = 1.0 + 0.25 * progress
-            config.sampling.d_min = float(config.sampling.d_min) * width_scale
-            config.sampling.d_max = float(config.sampling.d_max) * width_scale
-
-        print(
-            f"[transition] {virtual_state_name}: distance_to_goal={distance_to_goal:.2f} m, "
-            f"progress={progress:.2f}, desired_v={config.sampling.desire_velocity:.2f} m/s"
-        )
-
-        return virtual_state_name, progress, distance_to_goal
-
-    def _regularize_transition_initial_state(self, planner: CommonRoadReactivePlanner, progress: float) -> None:
-        max_steering = 0.035 - 0.015 * _clip01(progress)
-        steering = float(getattr(planner.x_0, "steering_angle", 0.0))
-        if abs(steering) > max_steering:
-            planner.x_0.steering_angle = float(np.sign(steering) * max_steering)
-        yaw_rate = float(getattr(planner.x_0, "yaw_rate", 0.0))
-        if abs(yaw_rate) > 0.04:
-            planner.x_0.yaw_rate = float(np.sign(yaw_rate) * 0.04)
 
     def _allow_state_transition(
             self,
@@ -695,19 +653,19 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
                 print(f"[transition] DEPARTING held: cannot evaluate heading lane offset ({exc})")
                 return False
 
-        if isinstance(from_state, BeforeStoppingState) and isinstance(to_state, StoppingState):
+        if isinstance(from_state, BeforeStoppingFinalState) and isinstance(to_state, StoppingState):
             steering = abs(float(getattr(next_state, "steering_angle", 0.0)))
             velocity = float(getattr(next_state, "velocity", 0.0))
             lateral_goal_error = abs(float(next_state.position[1]) - float(self.goal_y))
             if velocity > 0.8:
-                print(f"[transition] BEFORE_STOPPING held: velocity {velocity:.2f} m/s > 0.80 m/s")
+                print(f"[transition] BEFORE_STOPPING_FINAL held: velocity {velocity:.2f} m/s > 0.80 m/s")
                 return False
             if steering > 0.12:
-                print(f"[transition] BEFORE_STOPPING held: steering {steering:.3f} rad > 0.120 rad")
+                print(f"[transition] BEFORE_STOPPING_FINAL held: steering {steering:.3f} rad > 0.120 rad")
                 return False
             if lateral_goal_error > 1.2:
                 print(
-                    f"[transition] BEFORE_STOPPING held: lateral goal error "
+                    f"[transition] BEFORE_STOPPING_FINAL held: lateral goal error "
                     f"{lateral_goal_error:.2f} m > 1.20 m"
                 )
                 return False
@@ -751,8 +709,27 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
 
         return False
 
-    def _get_before_stopping_coord_system(self, state_current: State) -> CoordinateSystem:
-        """Use a smooth, state-relative reference from the current lane to the stop lane."""
+    def _get_before_stopping_coord_system(self, state: PlannerState, state_current: State) -> CoordinateSystem:
+        """Create the staged reference path for the active BEFORE_STOPPING state."""
+        if isinstance(state, BeforeStoppingAlignState):
+            return self._get_before_stopping_align_coord_system(state_current)
+        if isinstance(state, BeforeStoppingMergeState):
+            return self._get_before_stopping_merge_coord_system(state_current)
+        if isinstance(state, BeforeStoppingFinalState):
+            return self._get_before_stopping_final_coord_system(state_current)
+        return state.get_coordinate_system(self.scenario, self.planning_problem)
+
+    def _get_before_stopping_align_coord_system(self, state_current: State) -> CoordinateSystem:
+        """Follow the current pose to settle steering/yaw before starting the merge."""
+        x0, y0 = map(float, state_current.position)
+        theta = float(getattr(state_current, "orientation", 0.0))
+        s_values = np.linspace(-25.0, 100.0, 260)
+        x_values = x0 + np.cos(theta) * s_values
+        y_values = y0 + np.sin(theta) * s_values
+        return create_coordinate_system(np.column_stack((x_values, y_values)))
+
+    def _get_before_stopping_merge_coord_system(self, state_current: State) -> CoordinateSystem:
+        """Use a long, curvature-friendly lateral shift from current lane to goal_y."""
         if self._before_stopping_entry_pose is None:
             self._before_stopping_entry_pose = (
                 float(state_current.position[0]),
@@ -760,9 +737,8 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
                 max(0.0, float(state_current.velocity)),
             )
         entry_x, entry_y, entry_v = self._before_stopping_entry_pose
-        bay_entry_x = float(self.goal_x) - 44.0
-        merge_start_x = max(entry_x + max(4.0, entry_v * 0.8), bay_entry_x)
-        merge_end_x = max(merge_start_x + 22.0, float(self.goal_x) - 8.0)
+        merge_start_x = entry_x + max(2.0, entry_v * 0.5)
+        merge_end_x = max(merge_start_x + 50.0, float(self.goal_x) + 6.0)
         end_x = self.goal_x + 60.0
         reference_path = self._build_lateral_shift_path(
             state_current=state_current,
@@ -774,6 +750,10 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
             start_y=entry_y,
         )
         return create_coordinate_system(reference_path)
+
+    def _get_before_stopping_final_coord_system(self, state_current: State) -> CoordinateSystem:
+        """Hold the current pose while targeting the stop position longitudinally."""
+        return self._get_before_stopping_align_coord_system(state_current)
 
     def _get_departing_coord_system(self, state_current: State) -> CoordinateSystem:
         """Get appropriate coordinate system for DEPARTING state in bay scenario"""

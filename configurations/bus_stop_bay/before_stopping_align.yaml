@@ -1,0 +1,28 @@
+planning:
+  dt: 0.1
+  replanning_frequency: 5
+  time_steps_computation: 30
+  distance_arriving_to_next_to_before_stopping: 36.0
+
+vehicle:
+  id_type_vehicle: 2
+
+debug:
+  show_plots: true
+  save_plots: false
+  draw_traj_set: false
+  draw_icons: true
+  multiproc: true
+  num_workers: 6
+
+sampling:
+  t_min: 0.2
+  d_max: 0.35
+  d_min: -0.35
+  v_max: 5.0
+  v_min: 0.0
+  desire_velocity: 2.0
+  longitudinal_mode: velocity_keeping
+
+sumo:
+  sumo_planning_steps: 5
