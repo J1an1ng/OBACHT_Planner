@@ -71,20 +71,27 @@ class SamplingSpace(ABC):
             x_0_lon: np.ndarray,
             x_0_lat: np.ndarray,
             longitudinal_mode: str,
-            low_vel_mode: bool
+            low_vel_mode: bool,
+            sampling_profile=None,
     ) -> List[TrajectorySample]:
         """
         Generates a set of trajectories within the sampling space for a given sampling level.
         Interface method to the reactive planner to generate the trajectory set for the respective sampling space
         configuration.
         """
+        time_level = level_sampling
+        lon_level = level_sampling
+        lat_level = level_sampling
+        if sampling_profile is not None:
+            time_level, lon_level, lat_level = sampling_profile
+
         # initialize trajectory list
         list_trajectories = list()
 
         # iterate over time samples
-        for t in self._get_time_samples(level_sampling):
+        for t in self._get_time_samples(time_level):
             # iterate over longitudinal samples
-            for lon_sample in self._get_lon_samples(level_sampling,
+            for lon_sample in self._get_lon_samples(lon_level,
                                                     longitudinal_mode,
                                                     t_sample=t,
                                                     x_0=x_0_lon):
@@ -97,7 +104,7 @@ class SamplingSpace(ABC):
 
                 if trajectory_long.coeffs is not None:
                     # iterate over lateral samples
-                    for d in self._get_lat_samples(level_sampling,
+                    for d in self._get_lat_samples(lat_level,
                                                    x_0_lat=x_0_lat,
                                                    lon_trajectory=trajectory_long,
                                                    t_sample=t):

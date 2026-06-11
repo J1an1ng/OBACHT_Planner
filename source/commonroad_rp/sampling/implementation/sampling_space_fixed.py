@@ -56,6 +56,14 @@ class FixedIntervalSampling(SamplingSpace):
         """Set samples in s domain of sampling space"""
         self.samples_s = PositionSampling(s_min, s_max, self._num_sampling_levels, self.samples_s._num_init_samples)
 
+    def add_v_sample(self, velocity: float) -> bool:
+        """Add a required target velocity to the first sampling level."""
+        return self.samples_v.add_sample(velocity)
+
+    def add_s_sample(self, position: float) -> bool:
+        """Add a required target position to the first sampling level."""
+        return self.samples_s.add_sample(position)
+
     def _get_time_samples(self, level_sampling: int, **kwargs) -> Iterable[float]:
         """Returns time samples for the fixed sampling space"""
         return self.samples_t.samples_at_level(level_sampling)

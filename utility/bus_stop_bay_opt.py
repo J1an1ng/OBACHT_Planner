@@ -23,7 +23,7 @@ Strategy
 
 Usage
 -----
-    python utility/debug_projection_domain.py
+    python utility/bus_stop_bay_opt.py
 """
 
 import copy
@@ -52,6 +52,7 @@ if str(path_root) not in sys.path:
 
 # ── import the classes we will patch ─────────────────────────────────────────
 from commonroad.common.file_reader import CommonRoadFileReader
+from commonroad.scenario.obstacle import ObstacleType
 from commonroad_clcs.clcs import CurvilinearCoordinateSystem
 
 try:
@@ -551,6 +552,7 @@ _original_plan_and_optimize = _sm_module.BaseStateMachinePlanner._plan_and_optim
 def _patched_plan_and_optimize(self, planner, config, state_list, is_stopping: bool = False):
     global _current_sm_state
     start_idx = len(_plan_records)
+    cycle_start = time.perf_counter()
     next_state = None
     trajectory = None
     previous_sm_state = _current_sm_state
@@ -559,13 +561,43 @@ def _patched_plan_and_optimize(self, planner, config, state_list, is_stopping: b
         next_state, trajectory = _original_plan_and_optimize(
             self, planner, config, state_list, is_stopping=is_stopping
         )
+        if (
+            trajectory is not None
+            and float(getattr(planner.x_0, "velocity", 0.0)) <= 1e-3
+            and abs(float(getattr(planner.x_0, "orientation", 0.0))) > 1e-3
+        ):
+            print("[restart-debug] first replanned states:")
+            for idx, state in enumerate(
+                trajectory[0].state_list[:config.planning.replanning_frequency + 1]
+            ):
+                print(
+                    f"  i={idx} position=({state.position[0]:.6f}, "
+                    f"{state.position[1]:.6f}) "
+                    f"orientation={float(state.orientation):.6f} "
+                    f"velocity={float(state.velocity):.6f} "
+                    f"yaw_rate={float(getattr(state, 'yaw_rate', 0.0)):.6f}"
+                )
         return next_state, trajectory
     finally:
         if len(_plan_records) > start_idx:
-            rec = _plan_records[-1]
+            cycle_records = _plan_records[start_idx:]
+            rec = cycle_records[-1]
+            rec["cycle_elapsed_ms"] = (time.perf_counter() - cycle_start) * 1000.0
+            if trajectory is not None:
+                for earlier_record in cycle_records[:-1]:
+                    if earlier_record.get("planner_returned_none"):
+                        earlier_record["planner_returned_none"] = False
+                        earlier_record["recovered_by_dense_replan"] = True
+            elif getattr(self, "_fallback_braking_active", False):
+                for earlier_record in cycle_records[:-1]:
+                    if earlier_record.get("planner_returned_none"):
+                        earlier_record["planner_returned_none"] = False
+                        earlier_record["superseded_by_braking_fallback"] = True
             _record_planner_context(rec, planner)
             if rec.get("planner_returned_none"):
-                if trajectory is None:
+                if getattr(self, "_fallback_braking_active", False):
+                    rec["fallback_result"] = "controlled braking to standstill"
+                elif trajectory is None:
                     rec["fallback_result"] = "failed: keeping current state"
                 else:
                     rec["fallback_result"] = "standstill trajectory"
@@ -583,6 +615,7 @@ _sm_module.BaseStateMachinePlanner._plan_and_optimize = _patched_plan_and_optimi
 # ╚══════════════════════════════════════════════════════════════════════════════
 def run_simulation():
     from source.simulation.simulations import simulate_with_planner
+    from source.simulation.video import create_video
 
     config_path = path_root / "configurations" / "scenario.yaml"
     with open(config_path, "r") as f:
@@ -590,15 +623,36 @@ def run_simulation():
 
     bus_stop: str = cfg["scenario"]["type"]
     scenario_dir = path_root / "scenarios" / bus_stop
+    output_dir = path_root / "experiments" / "output_result"
 
-    print(f"[debug_projection_domain] Scenario: {bus_stop}")
+    print(f"[bus_stop_bay_opt] Scenario: {bus_stop}")
     if cfg.get("debug", {}).get("use_post_opt"):
-        print("[debug_projection_domain] debug.use_post_opt is ignored by the state machine.")
-    print("[debug_projection_domain] Planner mode: CommonRoad reactive planner only.")
-    print("[debug_projection_domain] Multiprocessing disabled – exceptions now propagate.\n")
+        print("[bus_stop_bay_opt] debug.use_post_opt is ignored by the state machine.")
+    print("[bus_stop_bay_opt] Planner mode: CommonRoad reactive planner only.")
+    print("[bus_stop_bay_opt] Multiprocessing disabled – exceptions now propagate.\n")
 
     try:
-        simulate_with_planner(interactive_scenario_path=str(scenario_dir))
+        simulated_scenario, planning_problem_set, ego_vehicles = simulate_with_planner(
+            interactive_scenario_path=str(scenario_dir),
+            return_on_planner_completion=True,
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        gif_file = create_video(
+            simulated_scenario,
+            str(output_dir),
+            planning_problem_set=planning_problem_set,
+            trajectory_pred=ego_vehicles,
+            follow_ego=False,
+            suffix="_bus_stop_bay_opt",
+            file_type="gif",
+            ego_obstacle_type=ObstacleType.BUS,
+            ego_dimensions=(12.95, 2.55),
+            ego_color="#E37222",
+            other_vehicle_color="#43A047",
+            figsize=(15, 8),
+            dpi=120,
+        )
+        print(f"[bus_stop_bay_opt] SUMO trajectory GIF saved to: {output_dir / gif_file}")
     except VehicleLeftScenarioError as exc:
         print(f"[INFO] {exc}")
     except _PROJECTION_DOMAIN_ERRORS as exc:
@@ -992,7 +1046,7 @@ def visualise(cfg: dict, bus_stop: str):
     plt.tight_layout()
     # Leave room at the bottom for the legend that sits outside ax_map
     plt.subplots_adjust(bottom=0.18)
-    out = path_root / "experiments" / "output_result" / "debug_projection_domain.png"
+    out = path_root / "experiments" / "output_result" / "bus_stop_bay_opt.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out), dpi=150, bbox_inches="tight")
     print(f"\n[debug] Figure saved to {out}")
@@ -1006,9 +1060,10 @@ def visualise(cfg: dict, bus_stop: str):
 def print_summary():
     error_idx = next((i for i, r in enumerate(_plan_records) if r["error"] is not None), None)
     fallback_indices = [i for i, r in enumerate(_plan_records) if r.get("planner_returned_none")]
+    cycle_records = [r for r in _plan_records if r.get("cycle_elapsed_ms") is not None]
     print("\n" + "=" * 65)
-    times_ms = [r["elapsed_ms"] for r in _plan_records if r["elapsed_ms"] is not None]
-    print(f"  Total planning steps recorded : {len(_plan_records)}")
+    times_ms = [r["cycle_elapsed_ms"] for r in cycle_records]
+    print(f"  Total planning steps recorded : {len(cycle_records)}")
     print(f"  Planner mode                  : CommonRoad RP only")
     print(f"  Fallback count                : {len(fallback_indices)}")
     if fallback_indices:
@@ -1031,10 +1086,10 @@ def print_summary():
     if times_ms:
         print(f"  Planning time  min / mean / max : "
               f"{min(times_ms):.1f} / {sum(times_ms)/len(times_ms):.1f} / {max(times_ms):.1f} ms")
-        slowest = max(range(len(_plan_records)),
-                      key=lambda i: _plan_records[i]["elapsed_ms"] or 0)
+        slowest_record = max(cycle_records, key=lambda record: record["cycle_elapsed_ms"])
+        slowest = _plan_records.index(slowest_record)
         print(f"  Slowest step  : {slowest}  "
-              f"({_plan_records[slowest]['elapsed_ms']:.1f} ms, "
+              f"({_plan_records[slowest]['cycle_elapsed_ms']:.1f} ms, "
               f"SM={_plan_records[slowest]['sm_state']})")
     if error_idx is not None:
         rec = _plan_records[error_idx]
@@ -1116,7 +1171,7 @@ if __name__ == "__main__":
     _log_dir = path_root / "experiments" / "output_result"
     _log_dir.mkdir(parents=True, exist_ok=True)
     _log_ts = time.strftime("%Y%m%d_%H%M%S")
-    _log_path = _log_dir / f"debug_projection_domain_{_log_ts}.log"
+    _log_path = _log_dir / f"bus_stop_bay_opt_{_log_ts}.log"
     _log_file = open(_log_path, "w", encoding="utf-8", buffering=1)
     sys.stdout = _TeeStream(sys.__stdout__, _log_file)
     sys.stderr = _TeeStream(sys.__stderr__, _log_file)

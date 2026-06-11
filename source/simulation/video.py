@@ -1,14 +1,15 @@
 import os
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+from commonroad.geometry.shape import Rectangle
 from commonroad.planning.planning_problem import PlanningProblemSet
 from commonroad.prediction.prediction import TrajectoryPrediction
 from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType
 from commonroad.scenario.scenario import Scenario
 from commonroad.scenario.state import InitialState
-from commonroad.visualization.draw_params import MPDrawParams
+from commonroad.visualization.draw_params import DynamicObstacleParams, MPDrawParams
 from commonroad.visualization.mp_renderer import MPRenderer
 from matplotlib.animation import FuncAnimation
 from sumocr.interface.ego_vehicle import EgoVehicle
@@ -20,8 +21,15 @@ def create_video(
     planning_problem_set: PlanningProblemSet = None,
     trajectory_pred: Union[Dict[int, EgoVehicle], List[TrajectoryPrediction]] = None,
     follow_ego: bool = False,
+    follow_ego_area_size: Union[float, Tuple[float, float]] = 120,
     suffix: str = "",
     file_type: str = "mp4",
+    ego_obstacle_type: ObstacleType = ObstacleType.CAR,
+    ego_dimensions: Optional[Tuple[float, float]] = None,
+    ego_color: str = "green",
+    other_vehicle_color: Optional[str] = None,
+    figsize: Tuple[float, float] = (5, 5),
+    dpi: int = 150,
 ) -> str:
     """
     Create video for a simulated scenario and the list of ego vehicles.
@@ -31,8 +39,15 @@ def create_video(
     :param planning_problem_set: possibility to plot a Commonroad planning problem
     :param trajectory_pred: list of one or more ego vehicles or their trajectory predictions
     :param follow_ego: focus video on the ego vehicle(s)
+    :param follow_ego_area_size: half-width and half-height of the ego-centered view in meters
     :param suffix: possibility to add suffix to file name
     :param file_type: mp4 or gif files supported
+    :param ego_obstacle_type: CommonRoad type used to draw the ego vehicle
+    :param ego_dimensions: optional ego length and width in meters
+    :param ego_color: ego vehicle fill color
+    :param other_vehicle_color: optional fill color for non-ego dynamic obstacles
+    :param figsize: output figure size in inches
+    :param dpi: output resolution
     :return:
     """
     assert file_type in ("mp4", "gif")
@@ -57,6 +72,17 @@ def create_video(
 
     for prediction in trajectory_pred:
         frame_count = len(prediction.trajectory.state_list) + frame_count_padding
+        prediction_shape = prediction.shape
+        if ego_dimensions is not None:
+            prediction_shape = Rectangle(
+                length=ego_dimensions[0],
+                width=ego_dimensions[1],
+            )
+            prediction = TrajectoryPrediction(
+                prediction.trajectory,
+                prediction_shape,
+            )
+
         # create the ego vehicle prediction using the trajectory and the shape of the obstacle
         dynamic_obstacle_initial_state = prediction.trajectory.state_list[0]
 
@@ -77,11 +103,10 @@ def create_video(
 
         # generate the dynamic obstacle according to the specification
         dynamic_obstacle_id = scenario.generate_object_id()
-        dynamic_obstacle_type = ObstacleType.CAR
         ego_dynamic_obstacle = DynamicObstacle(
             dynamic_obstacle_id,
-            dynamic_obstacle_type,
-            prediction.shape,
+            ego_obstacle_type,
+            prediction_shape,
             dynamic_obstacle_initial_state,
             prediction,
         )
@@ -90,7 +115,11 @@ def create_video(
     if follow_ego:
         if trajectory_pred:
             # a dictionary that holds the plot limits at each time step
-            dict_plot_limits = get_dynamic_plot_limits(trajectory_pred, frame_count)
+            dict_plot_limits = get_dynamic_plot_limits(
+                trajectory_pred,
+                frame_count,
+                area_size=follow_ego_area_size,
+            )
         else:
             # warnings.warn("Unable to follow the ego vehicle as no trajectory is provided!")
             dict_plot_limits = get_plot_limits(scenario, frame_count)
@@ -101,13 +130,33 @@ def create_video(
         1000 * scenario.dt
     )  # delay between frames in milliseconds, 1 second * dt to get actual time in ms
 
-    dpi = 150
-    figsize = (5, 5)
     draw_params = MPDrawParams()
     draw_params.axis_visible = False
     rnd = MPRenderer(figsize=figsize, draw_params=draw_params)
     rnd.ax.axes.get_xaxis().set_visible(False)
+    rnd.ax.axes.get_yaxis().set_visible(False)
+    rnd.f.subplots_adjust(left=0, right=1, bottom=0, top=1)
     (ln,) = plt.plot([], [], animated=True)
+
+    ego_params = DynamicObstacleParams()
+    ego_params.draw_icon = True
+    ego_params.draw_shape = True
+    ego_params.show_label = False
+    ego_params.vehicle_shape.occupancy.draw_occupancies = True
+    ego_params.vehicle_shape.occupancy.shape.facecolor = ego_color
+    ego_params.vehicle_shape.occupancy.shape.edgecolor = "#C55A11"
+    ego_params.vehicle_shape.occupancy.shape.opacity = 1
+    ego_params.vehicle_shape.occupancy.shape.zorder = 200
+
+    other_params = MPDrawParams()
+    other_params.axis_visible = False
+    other_params.dynamic_obstacle.draw_icon = True
+    other_params.dynamic_obstacle.draw_shape = True
+    other_params.dynamic_obstacle.show_label = False
+    if other_vehicle_color is not None:
+        other_params.dynamic_obstacle.vehicle_shape.occupancy.shape.facecolor = other_vehicle_color
+        other_params.dynamic_obstacle.vehicle_shape.occupancy.shape.edgecolor = "#1B5E20"
+        other_params.dynamic_obstacle.vehicle_shape.occupancy.shape.opacity = 1
 
     def init_plot():
         plt.cla()
@@ -115,23 +164,16 @@ def create_video(
             planning_problem_set.draw(rnd)
 
         if dynamic_obstacles_ego is not None:
-            draw_params = MPDrawParams()
-            draw_params.time_begin = 0
-            draw_params.time_end = 0
-            draw_params.axis_visible = False
-            draw_params.dynamic_obstacle.vehicle_shape.occupancy.shape.facecolor = (
-                "green"
-            )
-            rnd.draw_list(dynamic_obstacles_ego, draw_params)
+            ego_params.time_begin = 0
+            ego_params.time_end = 0
+            rnd.draw_list(dynamic_obstacles_ego, ego_params)
 
-        draw_params = MPDrawParams()
-        draw_params.time_begin = 0
-        draw_params.time_end = 0
-        scenario.draw(renderer=rnd, draw_params=draw_params)
+        other_params.time_begin = 0
+        other_params.time_end = 0
+        scenario.draw(renderer=rnd, draw_params=other_params)
         rnd.plot_limits = dict_plot_limits[0]
         rnd.render()
         plt.draw()
-        rnd.f.tight_layout()
         return (ln,)
 
     def animate_plot(frame):
@@ -139,27 +181,21 @@ def create_video(
         if planning_problem_set is not None:
             planning_problem_set.draw(rnd)
 
-        draw_params = MPDrawParams()
-        draw_params.time_begin = frame
-        draw_params.time_end = frame
-        rnd.draw_list(scenario.dynamic_obstacles, draw_params=draw_params)
+        other_params.time_begin = frame
+        other_params.time_end = frame
+        rnd.draw_list(scenario.dynamic_obstacles, draw_params=other_params)
 
         if dynamic_obstacles_ego is not None:
-            draw_params = MPDrawParams()
-            draw_params.time_begin = frame
-            draw_params.time_end = frame
-            draw_params.dynamic_obstacle.vehicle_shape.occupancy.shape.facecolor = (
-                "green"
-            )
-            rnd.draw_list(dynamic_obstacles_ego, draw_params=draw_params)
+            ego_params.time_begin = frame
+            ego_params.time_end = frame
+            rnd.draw_list(dynamic_obstacles_ego, draw_params=ego_params)
 
-        draw_params = MPDrawParams()
-        draw_params.time_begin = 0
-        draw_params.time_end = 0
-        scenario.lanelet_network.draw(renderer=rnd, draw_params=draw_params)
+        lanelet_params = MPDrawParams()
+        lanelet_params.time_begin = 0
+        lanelet_params.time_end = 0
+        scenario.lanelet_network.draw(renderer=rnd, draw_params=lanelet_params)
 
         rnd.plot_limits = dict_plot_limits[frame]
-        rnd.f.tight_layout()
         rnd.render()
         return (ln,)
 
@@ -180,29 +216,35 @@ def create_video(
 
 def get_plot_limits(scenario: Scenario, frame_count):
     """
-    The plot limits track the center of the ego vehicle.
+    Return fixed limits containing the complete lanelet geometry.
     """
-
-    def flatten(list_to_flat):
-        return [item for sublist in list_to_flat for item in sublist]
-
-    center_vertices = np.array(
-        flatten(
-            [lanelet.center_vertices for lanelet in scenario.lanelet_network.lanelets]
-        )
+    boundary_vertices = np.vstack(
+        [
+            vertices
+            for lanelet in scenario.lanelet_network.lanelets
+            for vertices in (lanelet.left_vertices, lanelet.right_vertices)
+        ]
     )
-
-    min_coords = np.min(center_vertices, axis=0)
-    max_coords = np.max(center_vertices, axis=0)
+    min_coords = np.min(boundary_vertices, axis=0)
+    max_coords = np.max(boundary_vertices, axis=0)
+    margin_x = 2.0
+    margin_y = 2.0
     dict_plot_limits = [
-        [min_coords[0], max_coords[0], min_coords[1], max_coords[1]]
+        [
+            min_coords[0] - margin_x,
+            max_coords[0] + margin_x,
+            min_coords[1] - margin_y,
+            max_coords[1] + margin_y,
+        ]
     ] * frame_count
 
     return dict_plot_limits
 
 
 def get_dynamic_plot_limits(
-    trajectories: List[TrajectoryPrediction], frame_count, area_size=120
+    trajectories: List[TrajectoryPrediction],
+    frame_count,
+    area_size: Union[float, Tuple[float, float]] = 120,
 ):
     """
     The plot limits track the center of the ego vehicles.
@@ -211,6 +253,11 @@ def get_dynamic_plot_limits(
     num_time_step_trajectories_max = max(
         [len(trajectory.trajectory.state_list) for trajectory in trajectories]
     )
+
+    if isinstance(area_size, (tuple, list)):
+        area_x, area_y = area_size
+    else:
+        area_x = area_y = area_size
 
     dict_plot_limits = list()
     for i in range(frame_count):
@@ -221,10 +268,10 @@ def get_dynamic_plot_limits(
                 num_time_step_trajectories_max - 1, trajectories
             )
 
-        x_min = min([state.position[0] for state in list_states_vehicles]) - area_size
-        x_max = max([state.position[0] for state in list_states_vehicles]) + area_size
-        y_min = min([state.position[1] for state in list_states_vehicles]) - area_size
-        y_max = max([state.position[1] for state in list_states_vehicles]) + area_size
+        x_min = min([state.position[0] for state in list_states_vehicles]) - area_x
+        x_max = max([state.position[0] for state in list_states_vehicles]) + area_x
+        y_min = min([state.position[1] for state in list_states_vehicles]) - area_y
+        y_max = max([state.position[1] for state in list_states_vehicles]) + area_y
 
         dict_plot_limits.append([x_min, x_max, y_min, y_max])
 

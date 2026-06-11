@@ -33,7 +33,7 @@ from sumocr.sumo_config.default import DefaultConfig
 from sumocr.sumo_docker.interface.docker_interface import SumoInterface
 from utility.visualization import plot_ksstate_trajectory,to_dataframe,plot_state
 from source.simulation.video import create_video
-from post_optimization_planner.state_machine import simulate_state_machine
+from post_optimization_planner.state_machine import StateMachineFinished, simulate_state_machine
 import yaml
 
 @unique
@@ -169,6 +169,7 @@ def simulate_with_planner(
     create_video: bool = False,
     use_sumo_manager: bool = False,
     create_ego_obstacle: bool = False,
+    return_on_planner_completion: bool = False,
     # scenario_type: str = None,
 ) -> Tuple[Scenario, PlanningProblemSet, Dict[int, EgoVehicle]]:
     """
@@ -179,6 +180,7 @@ def simulate_with_planner(
     :param create_video: indicates whether to create a mp4 of the simulated scenario
     :param use_sumo_manager: indicates whether to use the SUMO Manager
     :param create_ego_obstacle: indicates whether to create obstacles from the planned trajectories as the ego vehicles
+    :param return_on_planner_completion: finalize and return the partial simulation when the state machine finishes
     :return: Tuple of the simulated scenario, planning problem set, and list of ego vehicles
     """
     conf = load_sumo_configuration(interactive_scenario_path)
@@ -205,6 +207,7 @@ def simulate_with_planner(
         num_of_steps=conf.simulation_steps,
         planning_problem_set=planning_problem_set,
         use_sumo_manager=use_sumo_manager,
+        return_on_planner_completion=return_on_planner_completion,
         # scenario_type=scenario_type,
     )
     scenario_with_planner.scenario_id = scenario.scenario_id
@@ -291,6 +294,7 @@ def simulate_scenario(
     planning_problem_set: PlanningProblemSet = None,
     solution: Solution = None,
     use_sumo_manager: bool = False,
+    return_on_planner_completion: bool = False,
 ) -> Tuple[Scenario, Dict[int, EgoVehicle]]:
     """
     Simulates an interactive scenario with specified mode
@@ -303,6 +307,7 @@ def simulate_scenario(
     :param planning_problem_set: planning problem set of the scenario
     :param solution: solution to the planning problem
     :param use_sumo_manager: indicates whether to use the SUMO Manager
+    :param return_on_planner_completion: finalize and return when the state machine reports completion
     :return: simulated scenario and dictionary with items {planning_problem_id: EgoVehicle}
     """
 
@@ -343,7 +348,7 @@ def simulate_scenario(
             state_list = [copy.deepcopy(ego_vehicle_pre.initial_state)]
             state_list[0].time_step = 0
 
-
+            mission_complete = False
             for step in range(num_of_steps):
                 # print(step)
                 if use_sumo_manager:
@@ -377,11 +382,18 @@ def simulate_scenario(
                     # ====== Example motion planner 2: CommonRoad reactive planner
                     # Please see more details about this exemplary planner at
                     # https://commonroad.in.tum.de/tools/commonroad-reactive-planner
-                    next_state = simulate_state_machine(
-                        current_scenario, state_current_ego,
-                        list(planning_problem_set.planning_problem_dict.values())[0],
-                        state_list,  yaml_file_path= str(yaml_path),
-                    )
+                    try:
+                        next_state = simulate_state_machine(
+                            current_scenario, state_current_ego,
+                            list(planning_problem_set.planning_problem_dict.values())[0],
+                            state_list,  yaml_file_path= str(yaml_path),
+                        )
+                    except StateMachineFinished as exc:
+                        if not return_on_planner_completion:
+                            raise
+                        print(f"[INFO] {exc}")
+                        mission_complete = True
+                        break
                     print("next_state : ", next_state)
                     ########################################################################
                     # TODO: End of motion planner.
@@ -391,6 +403,9 @@ def simulate_scenario(
                     trajectory_ego = [next_state]
 
                     ego_vehicle.set_planned_trajectory(trajectory_ego)
+
+                if mission_complete:
+                    break
 
                 if use_sumo_manager:
                     # set the modified ego vehicles to synchronize in case of using sumo_docker

@@ -1,309 +1,418 @@
+"""Draw the state machine used by the current bus-stop-bay planner.
+
+The state topology and transition guards come from
+``post_optimization_planner/State.py`` and
+``post_optimization_planner/state_machine.py``. Planner targets shown inside
+the states come from ``configurations/bus_stop_bay/*.yaml``.
+"""
+
+from pathlib import Path
+
 import matplotlib.pyplot as plt
+from matplotlib.patches import FancyBboxPatch
 
-# 统一使用Times New Roman字体
-plt.rcParams.update({
-    "font.family": "serif",
-    "font.serif": ["Times New Roman"],
-    "mathtext.fontset": "stix",
-    "mathtext.rm": "Times New Roman",
-    "font.monospace": ["Times New Roman"]
-})
 
-SCALE = 1.3  # 除 Arriving 内部 & 状态名称外，其他文字放大倍数
+plt.rcParams.update(
+    {
+        "font.family": "serif",
+        "font.serif": ["Times New Roman", "DejaVu Serif"],
+        "mathtext.fontset": "stix",
+        "font.size": 10,
+    }
+)
 
-# —— 调整参数 —— #
-SHIFT_BA_DEP = 0.6       # BA 与 Departure 整体向左移动的距离
-ARROW_SHORTEN_BT = 0.6   # 缩短 BA→Terminal 水平箭头（终点向右移）
-LABEL_LEFT_SHIFT = 0.4   # 将 "final_stop = True" 再向左偏的量
 
-def draw_state_diagram():
+BOX_W = 3.25
+BOX_H = 1.75
+TOP_Y = 5.15
+BOTTOM_Y = 1.55
+STATE_X = {
+    "HEADING": 0.0,
+    "ARRIVING": 4.25,
+    "ALIGN": 8.50,
+    "MERGE": 12.75,
+    "DEPARTING": -4.25,
+    "SERVICE": 0.0,
+    "STOPPING": 4.25,
+    "FINAL": 12.75,
+}
 
-    fig, ax = plt.subplots(figsize=(12.5, 5))
-    ax.set_ylim(0.6, 6.5)
-    ax.axis('off')
 
-    # —— 可调公共边距（左右相等）——
-    MARGIN = 0.5
-
-    boxes = {
-        "Terminal": {"xy": (-6.50, 4.1), "w": 3.0, "h": 1.8},
-        "Boarding and Alighting": {"xy": (0.25, 4.0), "w": 3.5, "h": 2.0},
-        "Departure": {"xy": (0.25, 0.7), "w": 3.5, "h": 2.0},
-        "Heading to Next Station": {"xy": (7.75, 0.7), "w": 3.5, "h": 2.0},
-        "Arriving": {"xy": (7.75, 4.0), "w": 3.5, "h": 2.0},
+def _box_geometry(name):
+    """Return useful anchor points for a state box."""
+    x = STATE_X[name]
+    y = TOP_Y if name in {"HEADING", "ARRIVING", "ALIGN", "MERGE"} else BOTTOM_Y
+    return {
+        "x": x,
+        "y": y,
+        "left": x,
+        "right": x + BOX_W,
+        "bottom": y,
+        "top": y + BOX_H,
+        "cx": x + BOX_W / 2,
+        "cy": y + BOX_H / 2,
     }
 
-    # —— 面积 +25%（宽度×1.25），右边框保持不变 ——
-    grow_factor = 1.25
-    to_grow = ["Boarding and Alighting", "Departure", "Heading to Next Station", "Arriving"]
-    for name in to_grow:
-        x, y = boxes[name]["xy"]
-        w, h = boxes[name]["w"], boxes[name]["h"]
-        right = x + w
-        new_w = w * grow_factor
-        boxes[name]["w"] = new_w
-        boxes[name]["xy"] = (right - new_w, y)
 
-    # —— 将 BA 与 Departure 整体左移 —— #
-    for name in ["Boarding and Alighting", "Departure"]:
-        x, y = boxes[name]["xy"]
-        boxes[name]["xy"] = (x - SHIFT_BA_DEP, y)
+def _draw_state(ax, name, title, lines, *, implicit=False):
+    box = _box_geometry(name)
+    title_size = 10.0 if len(title) > 20 else 11.0
+    patch = FancyBboxPatch(
+        (box["x"], box["y"]),
+        BOX_W,
+        BOX_H,
+        boxstyle="round,pad=0.025,rounding_size=0.04",
+        facecolor="#f7f9fb" if not implicit else "#fffaf0",
+        edgecolor="black",
+        linewidth=1.35,
+        linestyle="--" if implicit else "-",
+        zorder=2,
+    )
+    ax.add_patch(patch)
+    ax.text(
+        box["cx"],
+        box["top"] - 0.17,
+        title,
+        ha="center",
+        va="top",
+        fontsize=title_size,
+        fontweight="bold",
+        zorder=3,
+    )
+    ax.text(
+        box["left"] + 0.18,
+        box["top"] - 0.55,
+        "\n".join(lines),
+        ha="left",
+        va="top",
+        fontsize=9.2,
+        linespacing=1.25,
+        zorder=3,
+    )
+    return box
 
-    # —— 依据“等边距”设定画布左右边界 ——
-    h2n_right = boxes["Heading to Next Station"]["xy"][0] + boxes["Heading to Next Station"]["w"]
-    xmax = h2n_right + MARGIN
-    terminal_left = boxes["Terminal"]["xy"][0]
-    xmin = terminal_left - MARGIN
-    ax.set_xlim(xmin, xmax)
 
-    def bx(name):
-        info = boxes[name]
-        x, y, w, h = info["xy"][0], info["xy"][1], info["w"], info["h"]
-        return {"x": x, "y": y, "w": w, "h": h,
-                "left": x, "right": x + w, "top": y + h, "bottom": y,
-                "cx": x + w/2, "cy": y + h/2}
+def _arrow(ax, start, end, *, connectionstyle="arc3", linestyle="-"):
+    ax.annotate(
+        "",
+        xy=end,
+        xytext=start,
+        arrowprops={
+            "arrowstyle": "->",
+            "linewidth": 1.35,
+            "color": "black",
+            "linestyle": linestyle,
+            "connectionstyle": connectionstyle,
+            "shrinkA": 1,
+            "shrinkB": 1,
+        },
+        zorder=1,
+    )
 
-    # 绘制盒子
-    for name, info in boxes.items():
-        x, y, w, h = info["xy"][0], info["xy"][1], info["w"], info["h"]
-        ax.add_patch(plt.Rectangle((x, y), w, h, fill=False, linewidth=1.7))
-        # 状态名称：保持不变（字号 13）
-        ax.text(x + w / 2, y + h - 0.18, name, ha='center', va='top',
-                fontsize=13, fontweight='bold', fontfamily='Times New Roman')
 
-        if name == "Boarding and Alighting":
-            ax.text(x + 1.35, y + h - 0.68,
-                    "\n".join([
-                        r"$\mathbf{v}_{\mathrm{des}}$: None",
-                        r"$\mathbf{d}_{\mathrm{des}}$: None",
-                        r"$\mathbf{s}_{\mathrm{des}}$: None",
-                    ]),
-                    ha='left', va='top', fontsize=10.5 * SCALE, fontfamily='Times New Roman', linespacing=1.1)
-            ax.text(x + 0.15, y + h - 1.42,
-                    "\n".join(["entry action:", "start timer C"]),
-                    ha='left', va='top', fontsize=10.5 * SCALE, fontfamily='Times New Roman', linespacing=1.1)
+def _label(ax, x, y, text, *, fontsize=8.5, ha="center", va="center"):
+    ax.text(
+        x,
+        y,
+        text,
+        ha=ha,
+        va=va,
+        fontsize=fontsize,
+        linespacing=1.15,
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.5},
+        zorder=4,
+    )
 
-        elif name == "Terminal":
-            ax.text(x + 1.15, y + h - 0.62,
-                    "\n".join([
-                        r"$\mathbf{v}_{\mathrm{des}}$: None",
-                        r"$\mathbf{d}_{\mathrm{des}}$: None",
-                        r"$\mathbf{s}_{\mathrm{des}}$: None",
-                    ]),
-                    ha='left', va='top', fontsize=10.5 * SCALE, fontfamily='Times New Roman', linespacing=1.1)
 
-        elif name == "Departure":
-            ax.text(x + 0.85, y + h - 0.58,
-                    "\n".join([
-                        r"$\mathbf{v}_{\mathrm{des}} = 5\,\mathrm{m/s}$",
-                        "",
-                        r"$\mathbf{d}_{\mathrm{des}}$: center line of the road",
-                        "",
-                        r"$\mathbf{s}_{\mathrm{des}}$: None"
-                    ]),
-                    ha='left', va='top', fontsize=10.5 * SCALE, fontfamily='Times New Roman', linespacing=1.1)
+def draw_state_diagram(output_dir=None, show=False):
+    """Generate PDF and PNG versions of the current state-machine diagram."""
+    fig, ax = plt.subplots(figsize=(20, 10))
+    ax.set_xlim(-5.0, 17.0)
+    ax.set_ylim(-0.45, 8.75)
+    ax.axis("off")
 
-        elif name == "Heading to Next Station":
-            ax.text(x + 0.85, y + h - 0.58,
-                    "\n".join([
-                        r"$\mathbf{v}_{\mathrm{des}} = 10\,\mathrm{m/s}$",
-                        "",
-                        r"$\mathbf{d}_{\mathrm{des}}$: center line of the road",
-                        "",
-                        r"$\mathbf{s}_{\mathrm{des}}$: None"
-                    ]),
-                    ha='left', va='top', fontsize=10.5 * SCALE, fontfamily='Times New Roman', linespacing=1.1)
+    # UML-style composite state containing the three staged bay-entry states.
+    composite_x = 8.15
+    composite_y = 1.18
+    composite_w = 8.20
+    composite_h = 6.72
+    ax.add_patch(
+        FancyBboxPatch(
+            (composite_x, composite_y),
+            composite_w,
+            composite_h,
+            boxstyle="round,pad=0.035,rounding_size=0.06",
+            facecolor="#fbfcfe",
+            edgecolor="black",
+            linewidth=1.55,
+            zorder=0,
+        )
+    )
+    ax.text(
+        composite_x + composite_w / 2,
+        composite_y + composite_h - 0.14,
+        "BEFORE STOPPING (COMPOSITE STATE)",
+        ha="center",
+        va="top",
+        fontsize=11.2,
+        fontweight="bold",
+        zorder=3,
+    )
 
-        elif name == "Arriving":
-            # Arriving 内部：全部保持原字号（10.5 / 9）
-            block_top = [
-                r"$\mathbf{v}_{\mathrm{des}} = 3\,\mathrm{m/s}$",
-                r"$\mathbf{d}_{\mathrm{des}}$: center line of the road",
-                r"$\mathbf{s}_{\mathrm{des}}$: None"
+    heading = _draw_state(
+        ax,
+        "HEADING",
+        "HEADING TO NEXT STATION",
+        [
+            r"$v_{\mathrm{des}} = 10.0\,\mathrm{m/s}$",
+            r"$d \in [-3.75,\,0]\,\mathrm{m}$",
+            "reference path: lanelet 2",
+        ],
+    )
+    arriving = _draw_state(
+        ax,
+        "ARRIVING",
+        "ARRIVING",
+        [
+            r"$v_{\mathrm{des}} = 5.0\,\mathrm{m/s}$",
+            r"$d \in [-1.5,\,1.5]\,\mathrm{m}$",
+            "reference path: lanelet 1",
+        ],
+    )
+    align = _draw_state(
+        ax,
+        "ALIGN",
+        "BEFORE STOPPING: ALIGN",
+        [
+            r"$v_{\mathrm{des}} = 2.0\,\mathrm{m/s}$",
+            r"$d \in [-0.35,\,0.35]\,\mathrm{m}$",
+            "reference: current pose",
+        ],
+    )
+    merge = _draw_state(
+        ax,
+        "MERGE",
+        "BEFORE STOPPING: MERGE",
+        [
+            r"$v_{\mathrm{des}} = 1.2\,\mathrm{m/s}$",
+            r"$d \in [-0.8,\,0.8]\,\mathrm{m}$",
+            "smooth lateral shift into bay",
+        ],
+    )
+    final = _draw_state(
+        ax,
+        "FINAL",
+        "BEFORE STOPPING: FINAL",
+        [
+            r"$v_{\mathrm{des}} = 0$",
+            "mode: longitudinal stopping",
+            r"target: $(x_{\mathrm{goal}},y_{\mathrm{goal}})$",
+        ],
+    )
+    stopping = _draw_state(
+        ax,
+        "STOPPING",
+        "STOPPING",
+        [
+            r"$v_{\mathrm{des}} = 0$",
+            r"$d \in [-0.8,\,0.8]\,\mathrm{m}$",
+            "target: goal-region center",
+        ],
+    )
+    service = _draw_state(
+        ax,
+        "SERVICE",
+        "BOARDING / ALIGHTING",
+        [
+            "implicit stopped-state hold",
+            r"$v = 0$",
+            r"hold while counter $\leq 15$",
+        ],
+        implicit=True,
+    )
+    departing = _draw_state(
+        ax,
+        "DEPARTING",
+        "DEPARTING",
+        [
+            r"$v_{\mathrm{des}} = 2.5\,\mathrm{m/s}$",
+            r"$d \in [-3.0,\,3.0]\,\mathrm{m}$",
+            "smooth merge to lanelet 2",
+        ],
+    )
+
+    # Nominal approach sequence.
+    _arrow(ax, (heading["right"], heading["cy"]), (arriving["left"], arriving["cy"]))
+    _label(
+        ax,
+        (heading["right"] + arriving["left"]) / 2,
+        heading["top"] + 0.28,
+        r"$0 < x_{\mathrm{goal}}-x < 100\,\mathrm{m}$",
+    )
+
+    _arrow(ax, (arriving["right"], arriving["cy"]), (align["left"], align["cy"]))
+    _label(
+        ax,
+        (arriving["right"] + align["left"]) / 2,
+        arriving["top"] + 0.28,
+        r"$|x_{\mathrm{goal}}-x| < 45\,\mathrm{m}$",
+    )
+
+    _arrow(ax, (align["right"], align["cy"]), (merge["left"], merge["cy"]))
+    _label(
+        ax,
+        (align["right"] + merge["left"]) / 2,
+        align["top"] + 0.38,
+        "\n".join(
+            [
+                r"$|x_{\mathrm{goal}}-x| < 36\,\mathrm{m}$",
+                r"$|\delta| < 0.08\,\mathrm{rad}$",
+                r"$|\dot{\psi}| < 0.06\,\mathrm{rad/s}$",
             ]
-            block_bottom = [
-                r"$\mathbf{v}_{\mathrm{des}} = 0$",
-                r"$\mathbf{d}_{\mathrm{des}}$: goal region",
-                r"$\mathbf{s}_{\mathrm{des}}$: goal region"
+        ),
+        fontsize=8.1,
+    )
+
+    # Turn down into the final stopping sequence.
+    _arrow(ax, (merge["cx"], merge["bottom"]), (final["cx"], final["top"]))
+    _label(
+        ax,
+        merge["cx"] + 0.18,
+        (merge["bottom"] + final["top"]) / 2,
+        r"$|x_{\mathrm{goal}}-x| < 8\,\mathrm{m}$",
+        ha="left",
+    )
+
+    _arrow(ax, (final["left"], final["cy"]), (stopping["right"], stopping["cy"]))
+    _label(
+        ax,
+        (final["left"] + stopping["right"]) / 2,
+        3.05,
+        "\n".join(
+            [
+                r"$[|x_{\mathrm{goal}}-x|<3\,\mathrm{m}$",
+                r"$\ \vee\ (x>x_{\mathrm{goal}}\wedge v<0.8)]$",
+                r"$v\leq0.8,\ |\delta|\leq0.12\,\mathrm{rad}$",
+                r"$|y-y_{\mathrm{goal}}|\leq1.2\,\mathrm{m}$",
             ]
-            # 左列文本
-            ax.text(x + 0.15, y + h - 0.65-0.15, "\n".join(block_top),
-                    ha='left', va='top', fontsize=10.5, fontfamily='Times New Roman', linespacing=1.1)
-            # 右列文本
-            ax.text(x + 2.8, y + h - 0.65-0.15, "\n".join(block_bottom),
-                    ha='left', va='top', fontsize=10.5, fontfamily='Times New Roman', linespacing=1.1)
+        ),
+        fontsize=7.9,
+    )
 
-            rect_top = y + h - 0.40      # 顶部略高于文字
-            rect_h  = 0.90               # 底线上抬 → 框更矮
+    _arrow(ax, (stopping["left"], stopping["cy"]), (service["right"], service["cy"]))
+    _label(
+        ax,
+        (stopping["left"] + service["right"]) / 2,
+        4.12,
+        "inside goal rectangle\n" + r"$v < 10^{-5}\,\mathrm{m/s}$",
+        fontsize=8.2,
+    )
 
-            center = x + w / 2
-            pad_x  = 0.10                # 两侧内边距
-            GAP    = 0.18                # 中间空隙，确保不相连
+    _arrow(ax, (service["left"], service["cy"]), (departing["right"], departing["cy"]))
+    _label(
+        ax,
+        -0.35,
+        3.62,
+        r"$\mathrm{stopping\ counter}>15\ \wedge$"
+        "\n"
+        r"$\mathrm{door\_closed}=\mathrm{True}$",
+        fontsize=7.7,
+    )
 
-            # block_top（左块）：右边界向右扩一些（更宽）
-            left_rect_x = x + pad_x
-            desired_left_right = center + 0.50
-            max_left_right = (x + w - pad_x) - GAP - 0.10
-            left_rect_right = min(desired_left_right, max_left_right)
-            left_rect_w = max(0.1, left_rect_right - left_rect_x)
-            ax.add_patch(plt.Rectangle((left_rect_x, rect_top - rect_h-0.15),
-                                       left_rect_w, rect_h,
-                                       fill=False, linestyle=(0, (3, 3)), linewidth=0.8, zorder=2))
+    # Departure returns to HEADING after the bus has merged into the main lane.
+    _arrow(
+        ax,
+        (departing["cx"], departing["top"]),
+        (heading["left"], heading["bottom"]),
+        connectionstyle="angle3,angleA=90,angleB=0",
+    )
+    _label(
+        ax,
+        -2.15,
+        (departing["top"] + heading["bottom"]) / 2 + 0.20,
+        "\n".join(
+            [
+                r"$v\geq2.5\,\mathrm{m/s}$",
+                r"$|\psi|<0.02\,\mathrm{rad},\ |a|<0.2\,\mathrm{m/s^2}$",
+                r"offset to lanelet 2 $\leq0.6\,\mathrm{m}$",
+            ]
+        ),
+        fontsize=7.9,
+        ha="center",
+    )
 
-            # block_bottom（右块）：左边界往右收（更窄）
-            right_rect_x = left_rect_right + GAP-0.1
-            right_rect_right = x + w - pad_x
-            right_rect_w = max(0.1, right_rect_right - right_rect_x)
-            ax.add_patch(plt.Rectangle((right_rect_x, rect_top - rect_h-0.15),
-                                       right_rect_w, rect_h,
-                                       fill=False, linestyle=(0, (3, 3)), linewidth=0.8, zorder=2))
+    # Mission completion is checked only after the stop service and departure.
+    terminal_x, terminal_y = -3.55, 5.62
+    ax.add_patch(
+        FancyBboxPatch(
+            (terminal_x, terminal_y),
+            1.8,
+            0.82,
+            boxstyle="round,pad=0.03,rounding_size=0.15",
+            facecolor="#f2f2f2",
+            edgecolor="black",
+            linewidth=1.35,
+        )
+    )
+    ax.text(
+        terminal_x + 0.9,
+        terminal_y + 0.41,
+        "TERMINAL",
+        ha="center",
+        va="center",
+        fontsize=10.5,
+        fontweight="bold",
+    )
+    _arrow(
+        ax,
+        (heading["left"], heading["cy"]),
+        (terminal_x + 1.8, terminal_y + 0.41),
+    )
+    _label(
+        ax,
+        -1.72,
+        heading["top"] + 0.28,
+        r"$\mathrm{final\_stop}=\mathrm{True}$",
+        fontsize=8.1,
+    )
 
-            # —— 计算两个方框的底边 y 值（相同）——
-            rect_bottom_y = rect_top - rect_h - 0.15  # NEW: 虚线方框底边 y
+    # Auxiliary behavior: this does not change the active state.
+    ax.text(
+        8.1,
+        0.32,
+        "Dashed state = implicit service phase. "
+        "If all trajectory-sampling attempts fail, controlled braking brings the "
+        "vehicle to standstill and planning resumes in the same active state.",
+        ha="center",
+        va="center",
+        fontsize=8.5,
+        style="italic",
+        color="#333333",
+    )
 
-            # 状态内部的标签位置（保持不变）
-            mid_y = y + h - 1.8
+    ax.set_title(
+        "State Machine for Bus-Stop-Bay Behavior Planning",
+        fontsize=15,
+        fontweight="bold",
+        pad=12,
+    )
 
-            # 原“水平箭头”改造：
-            # 1) 定义左右两端点（左点 / 右点）
-            left_pt  = (x + 1.0,     mid_y)
-            right_pt = (x + w - 1.0, mid_y)
+    output_dir = Path(output_dir) if output_dir is not None else Path(__file__).resolve().parent
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pdf_path = output_dir / "bus_stop_bay_state_machine.pdf"
+    png_path = output_dir / "bus_stop_bay_state_machine.png"
+    fig.savefig(pdf_path, dpi=300, bbox_inches="tight", pad_inches=0.08)
+    fig.savefig(png_path, dpi=300, bbox_inches="tight", pad_inches=0.08)
 
-            # 2) 先从左点作垂线到“左方框底边”
-            ax.plot([left_pt[0], left_pt[0]],
-                    [left_pt[1], rect_bottom_y],
-                    linewidth=1.2, zorder=3,color = "black")  # NEW: 左点垂线
+    if show:
+        plt.show()
+    else:
+        plt.close(fig)
 
-            # 3) 用“无箭头”的线段连接左点与右点（取代原水平箭头）
-            ax.plot([left_pt[0], right_pt[0]],
-                    [left_pt[1], right_pt[1]],
-                    linewidth=1.2, zorder=3,color ="black" )  # NEW: 左右点连线（无箭头）
+    print(f"Saved: {pdf_path}")
+    print(f"Saved: {png_path}")
+    return pdf_path, png_path
 
-            # 4) 以右点为起点，画新箭头，指向“右方框底边”
-            ax.annotate("",
-                        xy=(right_pt[0], rect_bottom_y),  # 箭头尖到达右方框底边
-                        xytext=(right_pt[0], right_pt[1]-0.01),
-                        arrowprops=dict(arrowstyle="->", linewidth=1.2),
-                        zorder=3)  # NEW: 右点→右方框底边的新箭头
-
-            # --- NEW: 粗略取 A 的位置，画一条水平线 + 一个箭头（全黑） ---
-            A_mid_y = y + h - 0.30  # 近似当作“Arriving”标题的中线 y
-            A_left_x_approx = x + w / 2 - 0.35  # 近似当作字母 A 的左沿 x
-            seg_right = (A_left_x_approx - 0.15, A_mid_y)  # 右端点：在 A 左边再左 0.15
-            seg_left = (left_pt[0], A_mid_y)  # 左端点：x 与左点一致
-
-            # 新水平线段（黑色）
-            # ax.plot([seg_left[0], seg_right[0]],
-            #         [seg_left[1], seg_right[1]],
-            #         linewidth=1.2, zorder=3, color="black")
-
-            # 新箭头：尾部在这条线段左端点；尖端在左虚线方框顶边上（黑色）
-            top_y = rect_top - 0.15
-            tip_x = min(max(seg_left[0], left_rect_x), left_rect_x + left_rect_w)
-            ax.annotate("", xy=(tip_x, top_y-0.02), xytext=(seg_left[0], seg_left[1]+0.02),
-                        arrowprops=dict(arrowstyle="->", linewidth=1.2, color="black"),
-                        zorder=3)
-
-            # 条件文本（保持不变）
-            ax.text(x + w / 2, mid_y + 0.0, r"$d_{\mathrm{goal}} < 15\,\mathrm{m}$",
-                    ha='center', va='bottom', fontsize=10.5, fontfamily='Times New Roman',
-                    backgroundcolor='white', zorder=1)
-
-            # 小标题
-            left_label_x = left_rect_x + left_rect_w / 2 - 0.75
-            right_label_x = right_rect_x + right_rect_w / 2 - 0.40
-            label_y = rect_top -0.19  # 标题离框顶稍微留点间距
-
-            ax.text(left_label_x, label_y-0.15, "Decelerating",
-                    ha='center', va='bottom',
-                    fontsize=9, fontweight='bold',
-                    fontfamily='Times New Roman', backgroundcolor='white', zorder=0)
-
-            ax.text(right_label_x, label_y-0.15, "Parking",
-                    ha='center', va='bottom',
-                    fontsize=9, fontweight='bold',
-                    fontfamily='Times New Roman', backgroundcolor='white', zorder=0)
-
-    # 水平箭头的上下偏移
-    LABEL_UP = 0.26
-    LABEL_DOWN = 0.20
-
-    def arrow(start, end, label=None, label_pos=None, text_below=None):
-        ax.annotate("", xy=end, xytext=start,
-                    arrowprops=dict(arrowstyle="->", linewidth=1.5))
-        if label:
-            if label_pos:
-                lx, ly = label_pos
-            else:
-                lx = (start[0] + end[0]) / 2
-                ly = (start[1] + end[1]) / 2 + LABEL_UP
-            ax.text(lx, ly, label, ha='center', va='center',
-                    fontsize=10.5 * SCALE, fontfamily='Times New Roman', backgroundcolor='white')
-        if text_below:
-            bx = (start[0] + end[0]) / 2
-            by = (start[1] + end[1]) / 2 - LABEL_DOWN
-            ax.text(bx, by, text_below, ha='center', va='center',
-                    fontsize=10.5 * SCALE, fontfamily='Times New Roman', backgroundcolor='white')
-
-    # ----- 箭头（自动基于盒子边缘） -----
-    BA  = bx("Boarding and Alighting")
-    DEP = bx("Departure")
-    H2N = bx("Heading to Next Station")
-    ARR = bx("Arriving")
-    TER = bx("Terminal")
-
-    # BA -> Terminal（水平，缩短箭头 + 标签左移）
-    start_bt = (BA["left"], BA["cy"])
-    end_bt   = (TER["right"], TER["cy"])  # 终点右移 → 箭头更短
-    midx_bt  = (start_bt[0] + end_bt[0]) / 2 - LABEL_LEFT_SHIFT
-    midy_bt  = (start_bt[1] + end_bt[1]) / 2 + LABEL_UP
-    arrow(start_bt, end_bt, label="final_stop = True", label_pos=(midx_bt+0.4, midy_bt))
-
-    # BA -> Departure（竖直，中点放标签）
-    start_bd = (BA["cx"], BA["bottom"])
-    end_bd   = (DEP["cx"], DEP["top"])
-    mid_bd   = ((start_bd[0] + end_bd[0]) / 2, (start_bd[1] + end_bd[1]) / 2)
-    arrow(start_bd, end_bd,
-          label=r"$\mathrm{door\_closed} = \mathrm{True} \wedge C > T_{\mathrm{threshold}}$",
-          label_pos=mid_bd)
-
-    # Departure -> H2N（水平）
-    start_dh = (DEP["right"], DEP["cy"])
-    end_dh   = (H2N["left"], H2N["cy"])
-    arrow(start_dh, end_dh)
-    midx_dh = (start_dh[0] + end_dh[0]) / 2
-    midy_dh = (start_dh[1] + end_dh[1]) / 2
-    ax.text(midx_dh, midy_dh + LABEL_UP,
-            r"$|v_{\mathrm{cur}} - v_{\mathrm{des}}|<10^{-1}$",
-            ha='center', va='center', fontsize=10.5 * SCALE, fontfamily='Times New Roman', backgroundcolor='white')
-    ax.text(midx_dh, midy_dh - LABEL_DOWN,
-            r"merge_into_main_traffic = True",
-            ha='center', va='center', fontsize=10.5 * SCALE, fontfamily='Times New Roman', backgroundcolor='white',zorder=0)
-
-    # H2N -> Arriving（竖直，中点放标签）
-    start_ha = (H2N["cx"], H2N["top"])
-    end_ha   = (ARR["cx"], ARR["bottom"])
-    mid_ha   = ((start_ha[0] + end_ha[0]) / 2, (start_ha[1] + end_ha[1]) / 2)
-    arrow(start_ha, end_ha,
-          label=r"$d_{\mathrm{goal}} < 100\,\mathrm{m}$",
-          label_pos=mid_ha)
-
-    # Arriving -> BA（水平）
-    start_ab = (ARR["left"], ARR["cy"])
-    end_ab   = (BA["right"], BA["cy"])
-    arrow(start_ab, end_ab)
-    midx_ab = (start_ab[0] + end_ab[0]) / 2
-    midy_ab = (start_ab[1] + end_ab[1]) / 2
-    ax.text(midx_ab, midy_ab + LABEL_UP, "fully_stop = True",
-            ha='center', va='center', fontsize=10.5 * SCALE, fontfamily='Times New Roman', backgroundcolor='white')
-    ax.text(midx_ab, midy_ab - LABEL_DOWN,
-            r"$v_{\mathrm{cur}} \in [-10^{-3}, +10^{-3}]$",
-            ha='center', va='center', fontsize=10.5 * SCALE, fontfamily='Times New Roman', backgroundcolor='white')
-
-    plt.tight_layout(pad=0.2)
-    plt.savefig('state_diagram.pdf', dpi=300, bbox_inches='tight', pad_inches=0.05)
-    plt.savefig('state_diagram.png', dpi = 1200, bbox_inches='tight', pad_inches=0.05)
-    plt.show()
 
 if __name__ == "__main__":
     draw_state_diagram()

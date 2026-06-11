@@ -39,6 +39,15 @@ class Sampling(ABC):
             '<Sampling>: Provided sampling level is incorrect! stage = {}'.format(sampling_level)
         return self._dict_level_to_sample_set[sampling_level]
 
+    def add_sample(self, sample: float, sampling_level: int = 0) -> bool:
+        """Add an in-bounds sample to one sampling level."""
+        if sample < self.low or sample > self.up:
+            return False
+        assert 0 <= sampling_level < self.num_sampling_levels, \
+            '<Sampling>: Provided sampling level is incorrect! stage = {}'.format(sampling_level)
+        self._dict_level_to_sample_set[sampling_level].add(sample)
+        return True
+
     @property
     def num_sampling_levels(self) -> int:
         """

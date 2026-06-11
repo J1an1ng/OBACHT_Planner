@@ -32,8 +32,8 @@ from commonroad_dc.collision.trajectory_queries.trajectory_queries import trajec
 # commonroad_rp imports
 from source.commonroad_rp.state import ReactivePlannerState
 from commonroad_rp.cost_function import CostFunction, DefaultCostFunction
-from commonroad_rp.sampling.base.base_sampling_space import SamplingSpace
-from commonroad_rp.sampling.factory import sampling_space_factory
+from source.commonroad_rp.sampling.base.base_sampling_space import SamplingSpace
+from source.commonroad_rp.sampling.factory import sampling_space_factory
 from commonroad_rp.polynomial_trajectory import QuinticTrajectory, QuarticTrajectory
 from commonroad_rp.trajectories import TrajectoryBundle, TrajectorySample, CartesianSample, CurviLinearSample, \
     FeasibilityStatus
@@ -304,6 +304,13 @@ class ReactivePlanner(object):
         else:
             self.x_0 = initial_state_cart if initial_state_cart is not None else self.x_0
 
+        # The Cartesian-to-curvilinear conversion depends on whether lateral
+        # derivatives are expressed over time or travelled arclength.
+        self._low_vel_mode = (
+            self.x_0 is not None
+            and self.x_0.velocity < self.config.planning.low_vel_mode_threshold
+        )
+
         # convert Cartesian initial state or pass given curvilinear initial state
         self.x_0_cl = initial_state_curv if initial_state_curv is not None else self._compute_initial_states(self.x_0)
 
@@ -448,6 +455,9 @@ class ReactivePlanner(object):
         else:
             self.set_v_sampling_parameters(v_min=self._desired_speed, v_max=self._desired_speed)
 
+        if hasattr(self.sampling_space, "add_v_sample"):
+            self.sampling_space.add_v_sample(self._desired_speed)
+
         # Update desired velocity in cost function
         if hasattr(self.cost_function, "desired_speed"):
             self.cost_function.desired_speed = self._desired_speed
@@ -477,6 +487,8 @@ class ReactivePlanner(object):
             delta_s_min = self.config.sampling.s_min
             delta_s_max = self.config.sampling.s_max
         self.set_s_sampling_parameters(s_min=lon_position + delta_s_min, s_max=lon_position + delta_s_max)
+        if hasattr(self.sampling_space, "add_s_sample"):
+            self.sampling_space.add_s_sample(lon_position)
 
         # Update cost function
         if hasattr(self.cost_function, "desired_s"):
@@ -549,7 +561,13 @@ class ReactivePlanner(object):
         for constraint in self.config.planning.constraints_to_check:
             self._infeasible_reason_dict[constraint] = 0
 
-    def _create_trajectory_bundle(self, x_0_lon: np.array, x_0_lat: np.array, samp_level: int) -> TrajectoryBundle:
+    def _create_trajectory_bundle(
+            self,
+            x_0_lon: np.array,
+            x_0_lat: np.array,
+            samp_level: int,
+            sampling_profile=None,
+    ) -> TrajectoryBundle:
         """
         Plans trajectory samples that try to reach a certain velocity and samples in this domain.
         Sample in time (duration) and velocity domain. Initial state is given. Longitudinal end state (s) is sampled.
@@ -566,7 +584,8 @@ class ReactivePlanner(object):
 
         trajectories = self.sampling_space.generate_trajectories_at_level(samp_level, x_0_lon, x_0_lat,
                                                                           self.config.sampling.longitudinal_mode,
-                                                                          self._low_vel_mode)
+                                                                          self._low_vel_mode,
+                                                                          sampling_profile=sampling_profile)
 
         # create trajectory bundle
         trajectory_bundle = TrajectoryBundle(trajectories, cost_function=self.cost_function)
@@ -679,7 +698,7 @@ class ReactivePlanner(object):
 
         return cart_traj_corrected, lon_list, lat_list
 
-    def plan(self, current_sampling_level: int = None) -> tuple:
+    def plan(self, current_sampling_level: int = None, sampling_profile=None) -> tuple:
         """
         Plans an optimal trajectory
         :param current_sampling_level: A specific sampling level to evaluate (no iteration)
@@ -690,6 +709,10 @@ class ReactivePlanner(object):
 
         # check if coordinate system is provided
         assert self._co is not None, "<ReactivePlanner.plan(): No coordinate system given. Call set_reference_path()>"
+
+        # Set the derivative convention before a potentially required
+        # Cartesian-to-curvilinear conversion.
+        self._low_vel_mode = self.x_0.velocity < self.config.planning.low_vel_mode_threshold
 
         # check if curvilinear initial state is provided and compute if necessary
         if not self.x_0_cl:
@@ -703,9 +726,6 @@ class ReactivePlanner(object):
 
         # get curvilinear initial states
         x_0_lon, x_0_lat = self.x_0_cl
-
-        # set low velocity mode given initial velocity in self.x_0
-        self._low_vel_mode = True if self.x_0.velocity < self.config.planning.low_vel_mode_threshold else False
 
         logger.info("===============================================================")
         logger.info("=================== Starting Planning Cycle ===================")
@@ -728,7 +748,6 @@ class ReactivePlanner(object):
         # initialize optimal trajectory dummy
         optimal_trajectory = None
 
-        # initial index of sampling set to use
         i = 1 if current_sampling_level is None else current_sampling_level
 
         # start timer
@@ -736,7 +755,12 @@ class ReactivePlanner(object):
 
         while optimal_trajectory is None and i < self.sampling_level:
             # sample trajectory bundle
-            bundle = self._create_trajectory_bundle(x_0_lon, x_0_lat, samp_level=i)
+            bundle = self._create_trajectory_bundle(
+                x_0_lon,
+                x_0_lat,
+                samp_level=i,
+                sampling_profile=sampling_profile,
+            )
 
             self._total_count_samples = len(bundle.trajectories)
 
@@ -860,6 +884,7 @@ class ReactivePlanner(object):
         # infeasible trajectory list is only used for visualization when self._draw_traj_set is True
         feasible_trajectories = list()
         infeasible_trajectories = list()
+        ref_pos = self._co.ref_pos
 
         # loop over list of trajectories
         for trajectory in trajectories:
@@ -923,6 +948,7 @@ class ReactivePlanner(object):
             # Curvature kappa : Cartesian (gl) and Curvilinear (cl)
             kappa_gl = np.zeros(self.N + 1)
             kappa_cl = np.zeros(self.N + 1)
+            ref_indices = np.searchsorted(ref_pos, s[:traj_len], side="right") - 1
 
             # Initialize Feasibility boolean
             feasible = True
@@ -966,11 +992,11 @@ class ReactivePlanner(object):
                     dpp = d_acceleration[i]
 
                 # factor for interpolation
-                s_idx = np.argmax(self._co.ref_pos > s[i]) - 1
-                if s_idx + 1 >= len(self._co.ref_pos):
+                s_idx = ref_indices[i]
+                if s_idx < 0 or s_idx + 1 >= len(ref_pos):
                     feasible = False
                     break
-                s_lambda = (s[i] - self._co.ref_pos[s_idx]) / (self._co.ref_pos[s_idx + 1] - self._co.ref_pos[s_idx])
+                s_lambda = (s[i] - ref_pos[s_idx]) / (ref_pos[s_idx + 1] - ref_pos[s_idx])
 
                 # compute curvilinear (theta_cl) and global Cartesian (theta_gl) orientation
                 if s_velocity[i] > 0.001:
@@ -980,8 +1006,8 @@ class ReactivePlanner(object):
 
                     theta_gl[i] = theta_cl[i] + interpolate_angle(
                         s[i],
-                        self._co.ref_pos[s_idx],
-                        self._co.ref_pos[s_idx + 1],
+                        ref_pos[s_idx],
+                        ref_pos[s_idx + 1],
                         self._co.ref_theta[s_idx],
                         self._co.ref_theta[s_idx + 1])
                 else:
@@ -991,8 +1017,8 @@ class ReactivePlanner(object):
 
                         theta_gl[i] = theta_cl[i] + interpolate_angle(
                             s[i],
-                            self._co.ref_pos[s_idx],
-                            self._co.ref_pos[s_idx + 1],
+                            ref_pos[s_idx],
+                            ref_pos[s_idx + 1],
                             self._co.ref_theta[s_idx],
                             self._co.ref_theta[s_idx + 1])
                     else:
@@ -1001,8 +1027,8 @@ class ReactivePlanner(object):
 
                         theta_cl[i] = theta_gl[i] - interpolate_angle(
                             s[i],
-                            self._co.ref_pos[s_idx],
-                            self._co.ref_pos[s_idx + 1],
+                            ref_pos[s_idx],
+                            ref_pos[s_idx + 1],
                             self._co.ref_theta[s_idx],
                             self._co.ref_theta[s_idx + 1])
 

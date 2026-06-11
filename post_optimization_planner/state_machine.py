@@ -72,6 +72,10 @@ class BaseStateMachinePlanner(ABC):
         self._before_stopping_entry_pose: Optional[Tuple[float, float, float]] = None
         self._departing_entry_pose: Optional[Tuple[float, float, float]] = None
         self._completed_stop_service = False
+        # True 表示常规规划已经失败，当前由状态机直接生成受控制动轨迹。
+        self._fallback_braking_active = False
+        # 保存一次 fallback 全程固定使用的离散步长、车辆轴距和控制上限。
+        self._fallback_braking_params: Optional[Dict[str, float]] = None
         self.goal_x: float = 0.0
         self.goal_y: float = 0.0
         self.lon_goal: float = 0.0
@@ -200,8 +204,29 @@ class BaseStateMachinePlanner(ABC):
         if self._is_mission_complete(state_current):
             pos = state_current.position
             raise StateMachineFinished(
-                f"状态机已完成一次停靠-发车任务 (位置: ({pos[0]:.2f}, {pos[1]:.2f}))"
+                f"Bus has finished one stop-and-go task (position: ({pos[0]:.2f}, {pos[1]:.2f}))"
             )
+
+        # fallback 激活后，后续 step 不再调用常规 planner，直到车辆完全停稳。
+        if self._fallback_braking_active:
+            # 速度、加速度和转角均归零后，制动阶段结束。
+            if self._fallback_braking_complete(state_current):
+                # 退出 fallback 模式；本 step 随后继续执行当前状态的常规规划 handler。
+                self._fallback_braking_active = False
+                self._fallback_braking_params = None
+                # state_current 就是停车末状态，也会成为新 planner 的 x_0。
+                print(
+                    f"[fallback-brake] Restart x0: "
+                    f"position=({state_current.position[0]:.3f}, "
+                    f"{state_current.position[1]:.3f}), "
+                    f"orientation={float(state_current.orientation):.6f} rad, "
+                    f"velocity={float(state_current.velocity):.3f} m/s, "
+                    f"steering={float(getattr(state_current, 'steering_angle', 0.0)):.6f} rad; "
+                    f"restarting {self.get_current_state_name()} planning"
+                )
+            else:
+                # 尚未停稳：只执行下一个制动时间段，并立即返回制动后的状态。
+                return self._execute_fallback_braking(state_current, state_list)
 
         # Handle special logic for STOPPING state
         if self._execute_stopping_counter(state_list):
@@ -262,41 +287,204 @@ class BaseStateMachinePlanner(ABC):
 
         return planner, config
 
+    def _activate_fallback_braking(self, config: Any, state_current: State) -> None:
+        """Freeze fallback parameters at the trigger state and enter braking mode."""
+        # 读取车辆配置的最大加速度绝对值，并避免异常的零上限
+        a_max = max(0.1, float(config.vehicle.a_max))
+
+        # 固定本次 fallback 使用的车辆参数和控制上限；运动状态始终从每一帧的 current state 继续积分。
+        self._fallback_braking_params = {
+            "dt": float(config.planning.dt),
+            "replanning_frequency": int(config.planning.replanning_frequency),
+            # 紧急制动减速度不超过车辆 a_max
+            "max_deceleration": min(2.0, a_max),
+            # 每个 dt 内允许的最大方向盘转角变化由 v_delta_max 决定
+            "max_steering_rate": max(0.0, float(config.vehicle.v_delta_max)),
+            # 自行车模型用轴距把方向盘转角转换成曲率和横摆角速度。
+            "wheelbase": max(1e-6, float(config.vehicle.wheelbase)),
+        }
+
+        # 从下一次 step 开始，状态机将不再调用 planner，而是直接生成受控制的制动状态，直到车辆完全停稳
+        self._fallback_braking_active = True
+
+    @staticmethod
+    def _fallback_braking_complete(state: State) -> bool:
+        """Return True only when the vehicle and steering have settled."""
+        return (
+            # 车辆纵向速度已经完全停稳，允许微小数值误差
+            abs(float(getattr(state, "velocity", 0.0))) <= 1e-3
+            # 制动结束后加速度也必须恢复为 0
+            and abs(float(getattr(state, "acceleration", 0.0))) <= 1e-3
+            # 方向盘转角必须回正
+            and abs(float(getattr(state, "steering_angle", 0.0))) <= 1e-3
+        )
+
+    def _execute_fallback_braking(self, state_current: State, state_list: list) -> State:
+        """Generate one dynamically consistent emergency-braking segment."""
+        if self._fallback_braking_params is None:
+            raise RuntimeError("Fallback braking is active without braking parameters")
+
+        # 读取激活 fallback 时冻结的参数，确保整个制动过程使用同一车辆模型和控制上限。
+        params = self._fallback_braking_params
+        dt = params["dt"]
+        max_deceleration = params["max_deceleration"]
+        wheelbase = params["wheelbase"]
+        # 将最大转角速度转换为每个 dt 内的最大转角变化，确保制动过程中方向盘逐步回正，而不是数值瞬间跳到 0
+        max_steering_step = params["max_steering_rate"] * dt
+        replanning_frequency = int(params["replanning_frequency"])
+
+        # 第一项是 fallback 触发时的真实车辆状态；后续状态都从前一项连续积分得到。
+        states = [copy.deepcopy(state_current)]
+        current = states[0]
+
+        # 一次调用生成 replanning_frequency 个未来状态
+        for _ in range(replanning_frequency):
+            # 读取本步初始速度、车身朝向和方向盘转角，并防止数值误差产生负速度
+            velocity = max(0.0, float(getattr(current, "velocity", 0.0)))
+            orientation = float(getattr(current, "orientation", 0.0))
+            steering = float(getattr(current, "steering_angle", 0.0))
+
+            #按固定最大减速度更新纵向速度，且速度最低只能到 0
+            next_velocity = max(0.0, velocity - max_deceleration * dt)
+
+            # 按方向盘转角速率限制逐步回正，避免 steering_angle 瞬间跳变
+            if abs(steering) <= max_steering_step:
+                next_steering = 0.0
+            else:
+                next_steering = steering - np.sign(steering) * max_steering_step
+
+            # 使用本 dt 前后的平均速度和平均转角进行梯形积分
+            mean_velocity = 0.5 * (velocity + next_velocity)
+            mean_steering = 0.5 * (steering + next_steering)
+            displacement = mean_velocity * dt
+
+            # 无侧滑自行车模型 kappa=tan(delta)/wheelbase，yaw_rate=v*kappa。转角回正时，yaw_rate 也会逐步回正
+            mean_yaw_rate = mean_velocity * np.tan(mean_steering) / wheelbase
+            orientation_change = mean_yaw_rate * dt
+
+            # 用本 dt 中点朝向积分位置变化，避免朝向变化过大时位置积分误差过大；同时确保朝向在 [-pi, pi] 范围内
+            midpoint_orientation = orientation + 0.5 * orientation_change
+            next_position = np.asarray(current.position, dtype=float) + displacement * np.array([
+                np.cos(midpoint_orientation),
+                np.sin(midpoint_orientation),
+            ])
+
+            # 积分得到本 dt 末朝向，并确保在 [-pi, pi] 范围内；这样可以避免朝向数值过大时的异常情况，同时也让后续 planner 的 x_0 朝向连续于制动前状态，避免 planner 因为朝向突变而无法找到可行轨迹
+            unwrapped_orientation = orientation + orientation_change
+            next_orientation = np.arctan2(
+                np.sin(unwrapped_orientation),
+                np.cos(unwrapped_orientation),
+            )
+
+            #末端 yaw_rate 必须与末端速度和转角一致，确保整个制动轨迹在动力学上连续可行
+            next_yaw_rate = next_velocity * np.tan(next_steering) / wheelbase
+
+            next_state = copy.deepcopy(current)
+
+            # 将离散自行车模型计算出的下一个状态的 position、velocity、acceleration、orientation、steering_angle 和 yaw_rate 更新到next state
+            next_state.position = next_position
+            next_state.velocity = next_velocity
+            next_state.acceleration = -max_deceleration if next_velocity > 0.0 else 0.0
+            next_state.orientation = next_orientation
+            next_state.steering_angle = next_steering
+            next_state.yaw_rate = next_yaw_rate
+            if hasattr(next_state, "slip_angle"):
+                next_state.slip_angle = 0.0
+
+            next_state.time_step = int(getattr(current, "time_step", 0)) + 1
+
+            states.append(next_state)
+            current = next_state
+
+        # 将新生成的状态追加到全局 state_list，供仿真和 GIF 使用
+        append_states_to_list_ver(state_list, states, replanning_frequency)
+
+        # 返回本次制动时间段的末状态，作为下一次状态机 step 的 state_current
+        next_state = states[-1]
+
+        # 输出本段制动前后的速度、朝向和转角，便于检查三个量是否连续变化
+        print(
+            f"[fallback-brake] v={float(state_current.velocity):.2f} -> "
+            f"{float(next_state.velocity):.2f} m/s, "
+            f"orientation={float(state_current.orientation):.3f} -> "
+            f"{float(next_state.orientation):.3f} rad, "
+            f"steering={float(getattr(state_current, 'steering_angle', 0.0)):.3f} -> "
+            f"{float(getattr(next_state, 'steering_angle', 0.0)):.3f} rad"
+        )
+        return next_state
+
     def _plan_and_optimize(self, planner: CommonRoadReactivePlanner, config: Any, state_list: list,
                            is_stopping: bool = False) -> Tuple[State, object]:
         """Execute one CommonRoad reactive-planner cycle."""
-        # Execute planning
+        state_name = self.get_current_state_name()
 
+        # Sampling level 在代码内部从 0 开始计数：
+        # sampling_profile 的顺序是 (time_level, longitudinal_level, lateral_level)。
+        sampling_level = 0
+        sampling_profile = (0, 0, 0)
 
-        #for time
         t0 = time.perf_counter()
 
+        # 第一次尝试：时间、纵向和横向都使用 Level 1
+        # 单次 planner.plan() 返回 None 只表示当前 sampling 配置失败
+        trajectory = planner.plan(
+            current_sampling_level=sampling_level,
+            sampling_profile=sampling_profile,
+        )
 
-        trajectory = planner.plan()
-        base_plan_time = planner.planning_times[-1] if planner.planning_times else (time.perf_counter() - t0)
+        # BEFORE_STOPPING_MERGE的专项重试：
+        # 保持时间和纵向为 Level 1，只将横向加密到 Level 3
+        # 这样可以增加不同横向轨迹形状，改善 kappa/kappa_dot 可行性
+        # 同时避免三个维度全部加密带来的大规模采样开销
+        if trajectory is None and state_name == "BEFORE_STOPPING_MERGE":
+            sampling_profile = (0, 0, 2)
+            trajectory = planner.plan(
+                current_sampling_level=sampling_level,
+                sampling_profile=sampling_profile,
+            )
 
-        # Fallback when planner returns None
+        # 如果前面的低成本采样仍然失败，三个维度统一升级到 Level 2
+        # 只要这里的 Level 2 成功，该 planning cycle 就正常继续
         if trajectory is None:
-            self._record_fallback_diagnostics(planner, config, "planner returned no trajectory")
-            logger.warning("Planner returned no trajectory; attempting standstill fallback")
-            standstill = planner._compute_standstill_trajectory()
-            if standstill is not None:
-                trajectory = planner._create_output(standstill)
-            if trajectory is None or trajectory[0] is None:
-                if planner.x_0_cl is None:
-                    pos = planner.x_0.position
-                    raise VehicleLeftScenarioError(
-                        f"车辆已到达场景边界 (位置: ({pos[0]:.2f}, {pos[1]:.2f}))"
-                    )
-                print(
-                    f"[ERROR] 规划失败: 无法找到有效轨迹且 standstill fallback 也失败，"
-                    f"位置 ({planner.x_0.position[0]:.2f}, {planner.x_0.position[1]:.2f})，保持当前状态。"
-                )
-                logger.warning("Standstill fallback also failed; keeping current state")
-                return planner.x_0, None
-            self.fallback_logs[-1]["result"] = "standstill trajectory"
+            sampling_level = 1
+            sampling_profile = (1, 1, 1)
+            trajectory = planner.plan(
+                current_sampling_level=sampling_level,
+                sampling_profile=sampling_profile,
+            )
+        base_plan_time = time.perf_counter() - t0
 
-        # Extract next state and update state list
+        # 只有所有上述采样尝试都返回 None，才进入真正的车辆 fallback
+        if trajectory is None:
+            # 保存无可行轨迹的原因、位置、速度和约束失败统计。
+            self._record_fallback_diagnostics(planner, config, "planner returned no trajectory")
+            logger.warning("Planner returned no trajectory; starting controlled braking fallback")
+
+            # 固定车辆模型和控制上限，并将状态机切换到 fallback braking 模式。
+            self._activate_fallback_braking(config, planner.x_0)
+
+            # 在当前 planning cycle 内立即按自行车模型生成第一段制动轨迹。
+            next_state = self._execute_fallback_braking(planner.x_0, state_list)
+
+            # 记录本次 planning cycle 的最终处理结果。
+            self.fallback_logs[-1]["result"] = "controlled braking to standstill"
+
+            self.timing_logs.append({
+                "state": state_name,
+                "sampling_level": sampling_level + 1,
+                "sampling_profile": sampling_profile,
+                "plan_time": base_plan_time,
+                "total_time": base_plan_time,
+                "Treplan": config.planning.replanning_frequency,
+                "T": config.planning.time_steps_computation * config.planning.dt,
+                "fallback_braking": True,
+            })
+
+            # trajectory 返回 None，表示该 step 执行的是状态机生成的制动状态。
+            return next_state, None
+
+        # 任一 sampling 尝试成功后，取 replanning_frequency 对应的执行终点，
+        # 并把中间的每个 dt 状态追加到完整轨迹，供仿真和 GIF 连续显示。
         next_state = trajectory[0].state_list[config.planning.replanning_frequency]
 
         append_states_to_list_ver(
@@ -306,7 +494,9 @@ class BaseStateMachinePlanner(ABC):
         )
 
         self.timing_logs.append({
-            "state": self.get_current_state_name(),
+            "state": state_name,
+            "sampling_level": sampling_level + 1,
+            "sampling_profile": sampling_profile,
             "plan_time": base_plan_time,  # CRRP 单次
             "total_time": base_plan_time,
             "Treplan": config.planning.replanning_frequency,
@@ -359,6 +549,9 @@ class BaseStateMachinePlanner(ABC):
 
     def _check_state_transition(self, next_state: State, config: Any) -> None:
         """Check if state transition is needed using state class method"""
+        # fallback 刹停期间保持原状态机阶段，避免制动中途切换规划参考线或配置。
+        if self._fallback_braking_active:
+            return
         new_state = self.current_state.check_transition(next_state, config, self.goal_x)
         if new_state is not None and self._allow_state_transition(self.current_state, new_state, next_state, config):
             self.current_state = new_state
