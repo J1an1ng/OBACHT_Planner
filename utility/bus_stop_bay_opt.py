@@ -27,6 +27,7 @@ Usage
 """
 
 import copy
+import csv
 import os
 import sys
 import time
@@ -613,6 +614,52 @@ _sm_module.BaseStateMachinePlanner._plan_and_optimize = _patched_plan_and_optimi
 # ╔══════════════════════════════════════════════════════════════════════════════
 # ║  RUN SIMULATION
 # ╚══════════════════════════════════════════════════════════════════════════════
+def _export_driven_trajectory_csv(planning_problem_set, ego_vehicles, output_path: Path):
+    """Export the complete executed trajectory at the simulation time resolution."""
+    if not ego_vehicles:
+        raise ValueError("No ego vehicle trajectory is available for export")
+
+    planning_problem_id, ego_vehicle = next(iter(ego_vehicles.items()))
+    states = list(ego_vehicle.driven_trajectory.trajectory.state_list)
+    planning_problem = planning_problem_set.planning_problem_dict[planning_problem_id]
+    initial_state = planning_problem.initial_state
+
+    if not states or states[0].time_step != initial_state.time_step:
+        states.insert(0, initial_state)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8", newline="") as csv_file:
+        writer = csv.DictWriter(
+            csv_file,
+            fieldnames=[
+                "time_step",
+                "time_s",
+                "velocity_mps",
+                "acceleration_mps2",
+                "x_m",
+                "y_m",
+            ],
+        )
+        writer.writeheader()
+        first_time_step = int(states[0].time_step)
+        for state in states:
+            writer.writerow(
+                {
+                    "time_step": int(state.time_step),
+                    "time_s": (int(state.time_step) - first_time_step) * 0.1,
+                    "velocity_mps": float(state.velocity),
+                    "acceleration_mps2": float(getattr(state, "acceleration", 0.0)),
+                    "x_m": float(state.position[0]),
+                    "y_m": float(state.position[1]),
+                }
+            )
+
+    print(
+        f"[bus_stop_bay_opt] Full trajectory CSV saved to: {output_path} "
+        f"({len(states)} states)"
+    )
+
+
 def run_simulation():
     from source.simulation.simulations import simulate_with_planner
     from source.simulation.video import create_video
@@ -637,6 +684,11 @@ def run_simulation():
             return_on_planner_completion=True,
         )
         output_dir.mkdir(parents=True, exist_ok=True)
+        _export_driven_trajectory_csv(
+            planning_problem_set,
+            ego_vehicles,
+            output_dir / "bus_stop_bay_opt_trajectory.csv",
+        )
         gif_file = create_video(
             simulated_scenario,
             str(output_dir),
