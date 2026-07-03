@@ -1289,6 +1289,136 @@ def _cart_from_sd(co: CurvilinearCoordinateSystem, s: float, d: float = 0.0):
         return None
 
 
+def _planning_time_ms(rec: dict) -> Optional[float]:
+    value = rec.get("cycle_elapsed_ms")
+    if value is None:
+        value = rec.get("elapsed_ms")
+    return float(value) if value is not None else None
+
+
+def _format_time_ms(value: Optional[float]) -> str:
+    if value is None:
+        return "n/a"
+    if value >= 1000.0:
+        return f"{value / 1000.0:.2f} s"
+    return f"{value:.0f} ms"
+
+
+def _compact_state_name(name: str) -> str:
+    aliases = {
+        "HEADING": "HEAD",
+        "ARRIVING": "ARR",
+        "BEFORE_STOPPING_ALIGN": "ALIGN",
+        "BEFORE_STOPPING_MERGE": "MERGE",
+        "BEFORE_STOPPING_FINAL": "FINAL",
+        "BEFORE_STOPPING": "PRESTOP",
+        "STOPPING": "STOP",
+        "DEPARTING": "DEPART",
+    }
+    return aliases.get(name, name)
+
+
+def _trajectory_segments(records: List[dict]) -> List[dict]:
+    segments: List[dict] = []
+    current: Optional[dict] = None
+    for rec in records:
+        if rec.get("position") is None:
+            continue
+        sm_state = rec["sm_state"]
+        if current is None or current["sm_state"] != sm_state:
+            current = {"sm_state": sm_state, "records": [], "positions": []}
+            segments.append(current)
+        current["records"].append(rec)
+        current["positions"].append(rec["position"])
+    return segments
+
+
+def _segment_avg_time_ms(segment: dict) -> Optional[float]:
+    times = []
+    for rec in segment["records"]:
+        time_ms = _planning_time_ms(rec)
+        if time_ms is not None:
+            times.append(time_ms)
+    return sum(times) / len(times) if times else None
+
+
+def _rects_overlap(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> bool:
+    return not (a[1] < b[0] or b[1] < a[0] or a[3] < b[2] or b[3] < a[2])
+
+
+def _add_segment_time_labels(ax, segments: List[dict]):
+    if not segments:
+        return
+
+    x_min, x_max = ax.get_xlim()
+    y_min, y_max = ax.get_ylim()
+    x_span = max(x_max - x_min, 1.0)
+    y_span = max(y_max - y_min, 1.0)
+    occupied: List[Tuple[float, float, float, float]] = []
+
+    offsets = [
+        (0.00, 0.18),
+        (0.00, -0.18),
+        (0.06, 0.28),
+        (-0.06, -0.28),
+        (-0.06, 0.28),
+        (0.06, -0.28),
+        (0.12, 0.18),
+        (-0.12, -0.18),
+        (-0.12, 0.18),
+        (0.12, -0.18),
+    ]
+
+    for idx, segment in enumerate(segments):
+        positions = np.asarray(segment["positions"])
+        if positions.size == 0:
+            continue
+        anchor = positions[len(positions) // 2]
+        label = f"{_compact_state_name(segment['sm_state'])}\navg {_format_time_ms(_segment_avg_time_ms(segment))}"
+        max_line_len = max(len(line) for line in label.splitlines())
+        label_w = max(15.0, max_line_len * 0.014 * x_span)
+        label_h = 0.22 * y_span
+
+        chosen = None
+        for ox, oy in offsets[idx % len(offsets):] + offsets[:idx % len(offsets)]:
+            tx = float(anchor[0] + ox * x_span)
+            ty = float(anchor[1] + oy * y_span)
+            tx = min(max(tx, x_min + 0.04 * x_span), x_max - 0.04 * x_span)
+            ty = min(max(ty, y_min + 0.13 * y_span), y_max - 0.11 * y_span)
+            rect = (
+                tx - label_w / 2.0,
+                tx + label_w / 2.0,
+                ty - label_h / 2.0,
+                ty + label_h / 2.0,
+            )
+            if not any(_rects_overlap(rect, used) for used in occupied):
+                chosen = (tx, ty, rect)
+                break
+
+        if chosen is None:
+            tx = float(anchor[0])
+            ty = min(max(float(anchor[1] + 0.20 * y_span), y_min + 0.13 * y_span), y_max - 0.11 * y_span)
+            chosen = (
+                tx,
+                ty,
+                (tx - label_w / 2.0, tx + label_w / 2.0, ty - label_h / 2.0, ty + label_h / 2.0),
+            )
+
+        tx, ty, rect = chosen
+        occupied.append(rect)
+        ax.text(
+            tx,
+            ty,
+            label,
+            fontsize=7.2,
+            color="#1f1f1f",
+            ha="center",
+            va="center",
+            zorder=12,
+            bbox=dict(boxstyle="round,pad=0.22", fc="white", ec="#666666", lw=0.55, alpha=0.92),
+        )
+
+
 def visualise(cfg: dict, bus_stop: str):
     if not _plan_records:
         print("[debug] No planning records captured – nothing to visualise.")
@@ -1301,17 +1431,23 @@ def visualise(cfg: dict, bus_stop: str):
     scenario, planning_problem_set = load_cr_scenario(bus_stop)
     planning_problem = next(iter(planning_problem_set.planning_problem_dict.values()))
 
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7.5),
-                             gridspec_kw={"width_ratios": [3.2, 0.9]})
-    ax_map, ax_tbl = axes
+    fig, ax_map = plt.subplots(figsize=(13.5, 2.85))
 
     total = len(_plan_records)
     err_str = f"step {error_idx}" if error_idx is not None else "no domain error"
     fb_str = f"step {first_fallback_idx}" if first_fallback_idx is not None else "none"
+    title_times = []
+    for rec in _plan_records:
+        time_ms = _planning_time_ms(rec)
+        if time_ms is not None:
+            title_times.append(time_ms)
+    avg_plan_str = _format_time_ms(sum(title_times) / len(title_times) if title_times else None)
     fig.suptitle(
         f"Projection Domain Debug  |  Scenario: {bus_stop}  |  "
-        f"CommonRoad RP only  |  Steps: {total}  |  Error: {err_str}  |  First fallback: {fb_str}",
-        fontsize=12,
+        f"CommonRoad RP only  |  Steps: {total}  |  Avg plan: {avg_plan_str}  |  "
+        f"Error: {err_str}  |  First fallback: {fb_str}",
+        fontsize=10,
+        y=0.985,
     )
 
     # ── draw lanelets ─────────────────────────────────────────────────────────
@@ -1384,12 +1520,10 @@ def visualise(cfg: dict, bus_stop: str):
             legend_handles.append(mpatches.Patch(color=c, label=legend_state))
 
     # ── vehicle trajectory coloured by SM state ────────────────────────────────
-    by_state: dict = {}
-    for rec in _plan_records:
-        if rec.get("position") is not None:
-            by_state.setdefault(rec["sm_state"], []).append(rec["position"])
-
-    for sm_state, positions in by_state.items():
+    trajectory_segments = _trajectory_segments(_plan_records)
+    for segment in trajectory_segments:
+        sm_state = segment["sm_state"]
+        positions = segment["positions"]
         if not positions:
             continue
         pts = np.array(positions)
@@ -1526,68 +1660,29 @@ def visualise(cfg: dict, bus_stop: str):
         visible_points = np.vstack([visible_points, traj_points])
     min_xy = visible_points.min(axis=0)
     max_xy = visible_points.max(axis=0)
-    pad_x = max(8.0, 0.06 * (max_xy[0] - min_xy[0]))
-    pad_y = max(4.0, 0.20 * (max_xy[1] - min_xy[1]))
+    pad_x = max(4.0, 0.025 * (max_xy[0] - min_xy[0]))
+    pad_y = max(2.0, 0.12 * (max_xy[1] - min_xy[1]))
     ax_map.set_xlim(min_xy[0] - pad_x, max_xy[0] + pad_x)
     ax_map.set_ylim(min_xy[1] - pad_y, max_xy[1] + pad_y)
     ax_map.set_xlabel("x [m]")
     ax_map.set_ylabel("y [m]")
-    ax_map.set_title("Vehicle trajectory by state")
-    # Place legend outside the axes (below), so it never overlaps the map
+    _add_segment_time_labels(ax_map, trajectory_segments)
+    # Place legend just outside the axes, keeping the map clear for poster use.
     ax_map.legend(
         handles=legend_handles,
         loc="upper center",
-        bbox_to_anchor=(0.5, -0.14),
-        ncol=min(len(legend_handles), 5),
-        fontsize=8,
+        bbox_to_anchor=(0.5, -0.30),
+        ncol=min(len(legend_handles), 7),
+        fontsize=7,
         framealpha=0.9,
         edgecolor="#aaaaaa",
+        borderpad=0.25,
+        handlelength=1.2,
+        columnspacing=0.8,
     )
     ax_map.grid(True, lw=0.4, alpha=0.5)
 
-    # ── compact diagnostics ────────────────────────────────────────────────────
-    ax_tbl.axis("off")
-    ax_tbl.set_title("Diagnostics", fontsize=10, pad=8)
-
-    fallback_indices = [i for i, r in enumerate(_plan_records) if r.get("planner_returned_none")]
-    state_counts = {}
-    for rec in _plan_records:
-        state_counts[rec["sm_state"]] = state_counts.get(rec["sm_state"], 0) + 1
-    lines = [
-        f"steps: {len(_plan_records)}",
-        f"fallbacks: {len(fallback_indices)}",
-        f"first fallback: {first_fallback_idx if first_fallback_idx is not None else 'none'}",
-        f"domain error: {error_idx if error_idx is not None else 'none'}",
-        "",
-        "state counts:",
-    ]
-    for state, count in sorted(state_counts.items(), key=lambda item: item[0]):
-        lines.append(f"  {state}: {count}")
-    if first_fallback_idx is not None:
-        rec = _plan_records[first_fallback_idx]
-        lines.extend([
-            "",
-            "first fallback:",
-            f"  state: {rec['sm_state']}",
-            f"  pos: ({rec['position'][0]:.2f}, {rec['position'][1]:.2f})",
-            f"  v: {rec['velocity']:.2f} m/s",
-            f"  hint: {rec.get('fallback_reason_hint') or 'unknown'}",
-        ])
-    if ax_info_text:
-        lines.append(ax_info_text)
-    ax_tbl.text(
-        0.02, 0.98, "\n".join(lines),
-        transform=ax_tbl.transAxes,
-        fontsize=8.5,
-        va="top",
-        ha="left",
-        family="monospace",
-        bbox=dict(boxstyle="round,pad=0.45", fc="white", ec="#cccccc", alpha=0.96),
-    )
-
-    plt.tight_layout()
-    # Leave room at the bottom for the legend that sits outside ax_map
-    plt.subplots_adjust(bottom=0.18)
+    plt.subplots_adjust(left=0.045, right=0.995, bottom=0.43, top=0.80)
     out = path_root / "experiments" / "output_result" / "result_bulb" / "bus_stop_bulb_opt.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out), dpi=150, bbox_inches="tight")
