@@ -24,14 +24,19 @@ path_root = Path(__file__).resolve().parent.parent
 config_path = path_root / "configurations" / "scenario.yaml"
 
 scenarios_root = path_root / "scenarios"
-viz_dir = path_root / "experiments" / "output_result"
 
 # 2. Load config
 with config_path.open("r") as f:
     cfg = yaml.safe_load(f)
 bus_stop = cfg["scenario"]["type"]
+if bus_stop == "bus_stop_bay":
+    viz_dir = path_root / "experiments" / "output_result" / "result_bay"
+elif bus_stop == "bus_stop_bulb":
+    viz_dir = path_root / "experiments" / "output_result" / "result_bulb"
+else:
+    viz_dir = path_root / "experiments" / "output_result"
 
-solutions_dir = path_root / "experiments" / "output_result" / f"{bus_stop}_True"
+solutions_dir = viz_dir / f"{bus_stop}_True"
 # 3. Load solution file
 bus_stop_no_underscore = bus_stop.replace("_", "")
 solution_file = (

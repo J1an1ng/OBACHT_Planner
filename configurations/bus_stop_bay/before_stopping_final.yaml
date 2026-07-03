@@ -2,7 +2,7 @@ planning:
   dt: 0.1
   replanning_frequency: 5
   time_steps_computation: 40
-  distance_before_stopping_to_stopping: 3.0
+  distance_before_stopping_to_stopping: 1.0
 
 vehicle:
   id_type_vehicle: 2
@@ -19,8 +19,8 @@ sampling:
   t_min: 0.2
   d_max: 0.35
   d_min: -0.35
-  v_max: 0.0
-  v_min: 0.0
+  v_max: 1.0e-5
+  v_min: -1.0e-5
   longitudinal_mode: stopping
   s_max: 8.0
   s_min: -3.0

@@ -22,8 +22,8 @@ debug:
 sampling:
   t_min: 0.2
   longitudinal_mode: velocity_keeping
-  v_max: 5
-  v_min: 0.0
+  v_max: 2.55
+  v_min: 2.45
   d_min: -3.75
   d_max: 0
   desire_velocity: 2.5

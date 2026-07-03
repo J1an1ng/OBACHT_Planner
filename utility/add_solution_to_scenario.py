@@ -19,13 +19,18 @@ sys.path.append(os.path.join(path_notebook, "../"))
 # Define project paths
 path_root = Path(__file__).resolve().parent.parent
 config_path = path_root / "configurations" / "scenario.yaml"
-solutions_dir = path_root / "experiments"/"output_result"
 scenarios_root = path_root / "scenarios"
 
 # Load configurations
 with config_path.open("r") as f:
     cfg = yaml.safe_load(f)
 bus_stop = cfg["scenario"]["type"]
+if bus_stop == "bus_stop_bay":
+    solutions_dir = path_root / "experiments" / "output_result" / "result_bay"
+elif bus_stop == "bus_stop_bulb":
+    solutions_dir = path_root / "experiments" / "output_result" / "result_bulb"
+else:
+    solutions_dir = path_root / "experiments" / "output_result"
 
 # Load solution file
 bus_stop_no_underscore = bus_stop.replace("_", "")

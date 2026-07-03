@@ -12,12 +12,22 @@ from commonroad.scenario.trajectory import Trajectory
 path_root = Path(__file__).resolve().parent.parent
 solutions_dir = path_root / "experiments" / "output_result"
 
+
+def _result_dir_for_filename(filename: str) -> Path:
+    base_dir = path_root / "experiments" / "output_result"
+    if "bus_stop_bay" in filename or "busstopbay" in filename:
+        return base_dir / "result_bay"
+    if "bus_stop_bulb" in filename or "busstopbulb" in filename:
+        return base_dir / "result_bulb"
+    return base_dir
+
+
 def plot_ksstate_trajectory(trajectory, filename: str):
     # Set Seaborn style for better aesthetics
     # sns.set(style="whitegrid")
     path_root = Path(__file__).resolve().parent.parent
 
-    save_dir = path_root / "experiments" / "output_result"
+    save_dir = _result_dir_for_filename(filename)
 
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -388,7 +398,7 @@ def plot_state(trajectory, filename: str):
 
     # Create output directory
     path_root = Path(__file__).resolve().parent.parent
-    save_dir = path_root / "experiments" / "output_result"
+    save_dir = _result_dir_for_filename(filename)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Get base filename without extension
@@ -515,7 +525,7 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
 
     # Create output directory
     path_root = Path(__file__).resolve().parent.parent
-    save_dir = path_root / "experiments" / "output_result"
+    save_dir = _result_dir_for_filename(filename)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Get base filename without extension

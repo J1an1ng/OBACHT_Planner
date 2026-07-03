@@ -19,6 +19,14 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DT = 0.1
 
 
+def scenario_result_dir(scenario: str) -> Path:
+    if scenario == "bus_stop_bay":
+        return PROJECT_ROOT / "experiments" / "output_result" / "result_bay"
+    if scenario == "bus_stop_bulb":
+        return PROJECT_ROOT / "experiments" / "output_result" / "result_bulb"
+    return PROJECT_ROOT / "experiments" / "output_result"
+
+
 def default_solution_path() -> Path:
     """Resolve the solution selected in configurations/scenario.yaml."""
     config_path = PROJECT_ROOT / "configurations" / "scenario.yaml"
@@ -29,13 +37,7 @@ def default_solution_path() -> Path:
     use_post_opt = bool(config["debug"]["use_post_opt"])
     scenario_id = scenario.replace("_", "")
     filename = f"solution_KS1:WX1:DEU_{scenario_id}-1:2020a.xml"
-    return (
-        PROJECT_ROOT
-        / "experiments"
-        / "output_result"
-        / f"{scenario}_{use_post_opt}"
-        / filename
-    )
+    return scenario_result_dir(scenario) / f"{scenario}_{use_post_opt}" / filename
 
 
 def load_velocity_profile(solution_path: Path, dt: float) -> tuple[np.ndarray, np.ndarray]:
@@ -164,6 +166,7 @@ def parse_args() -> argparse.Namespace:
         default=PROJECT_ROOT
         / "experiments"
         / "output_result"
+        / "result_bay"
         / "bus_stop_bay_opt_trajectory.csv",
         help="Trajectory CSV export or CommonRoad solution XML file.",
     )
@@ -173,6 +176,7 @@ def parse_args() -> argparse.Namespace:
         default=PROJECT_ROOT
         / "experiments"
         / "output_result"
+        / "result_bay"
         / "bus_stop_bay_opt_velocity_profile.png",
         help="Output image path; the extension selects the file format.",
     )

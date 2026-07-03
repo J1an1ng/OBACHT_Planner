@@ -26,8 +26,8 @@ sampling:
   t_min: 0.2
   d_max: 1.5
   d_min: -1.5
-  v_max: 10
-  v_min: 0
+  v_max: 1.55
+  v_min: 1.45
   desire_velocity: 1.5
   longitudinal_mode: velocity_keeping
 

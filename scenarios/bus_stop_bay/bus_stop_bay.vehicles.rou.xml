@@ -8,21 +8,21 @@
     <vehicle id="1" depart="0.0" departLane="1" departPos="0" departSpeed="10">
         <route edges="1" />
     </vehicle>
-    <vehicle id="2" depart="1.0" departLane="0" departPos="0" departSpeed="10">
-        <route edges="1" />
-    </vehicle>
-    <vehicle id="3" depart="8.5" departLane="0" departPos="20" departSpeed="10">
-        <route edges="1" />
-    </vehicle>
-    <vehicle id="4" depart="3.5" departLane="1" departPos="0" departSpeed="10">
-        <route edges="1" />
-    </vehicle>
+<!--    <vehicle id="2" depart="1.0" departLane="0" departPos="0" departSpeed="10">-->
+<!--        <route edges="1" />-->
+<!--    </vehicle>-->
+<!--    <vehicle id="3" depart="8.5" departLane="0" departPos="20" departSpeed="10">-->
+<!--        <route edges="1" />-->
+<!--    </vehicle>-->
+<!--    <vehicle id="4" depart="3.5" departLane="1" departPos="0" departSpeed="10">-->
+<!--        <route edges="1" />-->
+<!--    </vehicle>-->
     <vehicle id="6" depart="24.5" departLane="1" departPos="20" departSpeed="10">
         <route edges="1" />
     </vehicle>
-    <vehicle id="5" depart="30.2" departLane="0"  departPos="30.2"  departSpeed="5">
-        <route edges="303" />
-    </vehicle>
+<!--    <vehicle id="5" depart="30.2" departLane="0"  departPos="30.2"  departSpeed="5">-->
+<!--        <route edges="303" />-->
+<!--    </vehicle>-->
 
 
 </routes>

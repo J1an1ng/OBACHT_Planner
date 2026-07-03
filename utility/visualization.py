@@ -14,12 +14,22 @@ from commonroad.scenario.trajectory import Trajectory
 path_root = Path(__file__).resolve().parent.parent
 solutions_dir = path_root / "experiments" / "output_result"
 
+
+def _result_dir_for_filename(filename: str) -> Path:
+    base_dir = path_root / "experiments" / "output_result"
+    if "bus_stop_bay" in filename or "busstopbay" in filename:
+        return base_dir / "result_bay"
+    if "bus_stop_bulb" in filename or "busstopbulb" in filename:
+        return base_dir / "result_bulb"
+    return base_dir
+
+
 def plot_ksstate_trajectory(trajectory, filename: str):
     # Set Seaborn style for better aesthetics
     # sns.set(style="whitegrid")
     path_root = Path(__file__).resolve().parent.parent
 
-    save_dir = path_root / "experiments" / "output_result"
+    save_dir = _result_dir_for_filename(filename)
 
     save_dir.mkdir(parents=True, exist_ok=True)
 
@@ -50,7 +60,6 @@ def plot_ksstate_trajectory(trajectory, filename: str):
     y_positions = np.array([state.position[1] for state in trajectory.state_list])
     velocities = np.array([state.velocity for state in trajectory.state_list])
     orientations = np.array([state.orientation for state in trajectory.state_list])
-    deltas = np.array([state.steering_angle for state in trajectory.state_list])
 
     # Calculate acceleration and prepend the first element as 0
     accelerations = np.zeros(len(velocities))
@@ -60,16 +69,8 @@ def plot_ksstate_trajectory(trajectory, filename: str):
     jerks = np.zeros(len(velocities))
     jerks[1:] = np.diff(accelerations) / dt
 
-    # Calculate orientation rate of change
-    orientation_rates = np.zeros(len(orientations))
-    orientation_rates[1:] = np.diff(orientations) / dt
-
-    # Calculate steering rate of change
-    steering_rates = np.zeros(len(deltas))
-    steering_rates[1:] = np.diff(deltas) / dt
-
-    # Create 8 subplots arranged in 2 columns and 4 rows
-    fig, axs = plt.subplots(4, 2, figsize=(18, 24), constrained_layout=True)
+    # Create the first 5 trajectory subplots only.
+    fig, axs = plt.subplots(3, 2, figsize=(18, 18), constrained_layout=True)
 
     # Flatten the axs array for easy indexing
     axs = axs.flatten()
@@ -118,29 +119,8 @@ def plot_ksstate_trajectory(trajectory, filename: str):
             "data": [k, orientations],
             "color": "#8c564b",
             "ylabel": "Orientation (rad)",
-            "title": "Orientation Over Time Steps",
-        },
-        {
-            "plot_func": axs[5].plot,
-            "data": [k, orientation_rates],
-            "color": "#e377c2",
-            "ylabel": "Orientation Rate (rad/s)",
-            "title": "Orientation Rate of Change Over Time Steps",
-        },
-        {
-            "plot_func": axs[6].plot,
-            "data": [k, deltas],
-            "color": "#17becf",
-            "ylabel": "Steering Angle (rad)",
-            "title": "Steering Angle Over Time Steps",
-        },
-        {
-            "plot_func": axs[7].plot,
-            "data": [k, steering_rates],
-            "color": "#ff7f0e",
-            "ylabel": "Steering Rate (rad/s)",
             "xlabel": "Time Step (k)",
-            "title": "Steering Rate of Change Over Time Steps",
+            "title": "Orientation Over Time Steps",
         },
     ]
 
@@ -345,7 +325,7 @@ def plot_state(trajectory, filename: str):
 
     # Create output directory
     path_root = Path(__file__).resolve().parent.parent
-    save_dir = path_root / "experiments" / "output_result"
+    save_dir = _result_dir_for_filename(filename)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Get base filename without extension
@@ -649,7 +629,7 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
 
     # Create output directory
     path_root = Path(__file__).resolve().parent.parent
-    save_dir = path_root / "experiments" / "output_result"
+    save_dir = _result_dir_for_filename(filename)
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Get base filename without extension

@@ -21,7 +21,6 @@ sys.path.append(os.path.join(path_notebook, "../"))
 # Define project paths - 使用字符串路径
 path_root = str(Path(__file__).resolve().parent.parent)
 config_path = os.path.join(path_root, "configurations", "scenario.yaml")
-solutions_dir = os.path.join(path_root, "experiments", "output_result")
 scenarios_root = os.path.join(path_root, "scenarios")
 
 # Load configurations
@@ -30,13 +29,19 @@ with open(config_path, "r") as f:
 
 bus_stop = cfg["scenario"]["type"]
 opt = cfg["debug"]["use_post_opt"]
+if bus_stop == "bus_stop_bay":
+    solutions_dir = os.path.join(path_root, "experiments", "output_result", "result_bay")
+elif bus_stop == "bus_stop_bulb":
+    solutions_dir = os.path.join(path_root, "experiments", "output_result", "result_bulb")
+else:
+    solutions_dir = os.path.join(path_root, "experiments", "output_result")
 
 # Load solution file
 bus_stop_no_underscore = bus_stop.replace("_", "")
 
 
-solution_dir_True = os.path.join(path_root, "experiments", "output_result", f"{bus_stop}_True")
-solution_dir_False = os.path.join(path_root, "experiments", "output_result", f"{bus_stop}_False")
+solution_dir_True = os.path.join(solutions_dir, f"{bus_stop}_True")
+solution_dir_False = os.path.join(solutions_dir, f"{bus_stop}_False")
 
 solution_file_True = os.path.join(solution_dir_True, f"solution_KS1:WX1:DEU_{bus_stop_no_underscore}-1:2020a.xml")
 solution_file_False = os.path.join(solution_dir_False, f"solution_KS1:WX1:DEU_{bus_stop_no_underscore}-1:2020a.xml")

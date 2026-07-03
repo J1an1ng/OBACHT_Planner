@@ -23,15 +23,18 @@ Strategy
 
 Usage
 -----
-    python utility/bus_stop_bay_opt.py
+    python utility/bus_stop_bulb_opt.py
 """
 
 import copy
 import csv
+import builtins
+import io
 import os
 import sys
 import time
 import traceback
+from contextlib import contextmanager
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -55,10 +58,11 @@ if str(path_root) not in sys.path:
 from commonroad.common.file_reader import CommonRoadFileReader
 from commonroad.geometry.shape import Circle, Rectangle
 from commonroad.prediction.prediction import TrajectoryPrediction
-from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType
-from commonroad.scenario.state import ExtendedPMState, InitialState
 from commonroad.scenario.traffic_sign import TrafficSign, TrafficSignElement, TrafficSignIDGermany
 from commonroad.scenario.trajectory import Trajectory
+from commonroad.scenario.obstacle import ObstacleType
+from commonroad.scenario.obstacle import DynamicObstacle
+from commonroad.scenario.state import ExtendedPMState, InitialState
 from commonroad.visualization.draw_params import DynamicObstacleParams, MPDrawParams
 from commonroad.visualization.mp_renderer import MPRenderer
 from commonroad_clcs.clcs import CurvilinearCoordinateSystem
@@ -83,6 +87,7 @@ except (ImportError, AttributeError):
 
 from source.commonroad_rp.reactive_planner import ReactivePlanner
 from source.commonroad_rp.trajectories import FeasibilityStatus
+from post_optimization_planner.State import _extend_path
 from post_optimization_planner.state_machine import VehicleLeftScenarioError
 
 # ── tee: duplicate stdout/stderr to a log file ───────────────────────────────
@@ -118,7 +123,11 @@ _active_plan_record: Optional[dict] = None    # the record being filled during p
 _pre_plan_states: list = []                   # _compute_initial_states calls from outside plan()
 _plan_call_count: int = 0                     # total plan() invocations (for sanity checks)
 _lane_change_to_stop_timer: dict = {
-    "lane_change_state": "BEFORE_STOPPING_MERGE",
+    "lane_change_state": "ARRIVING",
+    "armed": False,
+    "reference_y": None,
+    "reference_orientation": None,
+    "scan_index": 0,
     "lane_change_step": None,
     "lane_change_time_s": None,
     "stop_step": None,
@@ -128,6 +137,7 @@ _lane_change_to_stop_timer: dict = {
 
 
 _DEBUG_MAX_REQUIRED_DECEL_RATIO = 0.8
+_TARGET_SCENARIO = "bus_stop_bulb"
 
 
 def _sampling_attr(config, name: str, default=None):
@@ -157,15 +167,55 @@ def _record_lane_change_to_stop_timing(before: str, after: str, state_list: list
     if (
         before != lane_change_state
         and after == lane_change_state
-        and _lane_change_to_stop_timer["lane_change_time_s"] is None
+        and not _lane_change_to_stop_timer["armed"]
     ):
-        _lane_change_to_stop_timer["lane_change_step"] = sim_step
-        _lane_change_to_stop_timer["lane_change_time_s"] = sim_time_s
+        reference_state = state_list[-1] if state_list else None
+        _lane_change_to_stop_timer["armed"] = True
+        _lane_change_to_stop_timer["reference_y"] = (
+            float(reference_state.position[1]) if reference_state is not None else None
+        )
+        _lane_change_to_stop_timer["reference_orientation"] = (
+            float(getattr(reference_state, "orientation", 0.0)) if reference_state is not None else None
+        )
+        _lane_change_to_stop_timer["scan_index"] = len(state_list) if state_list else 0
         if sim_time_s is not None:
             print(
-                f"[stop-timing] lane change started in {after} at "
+                f"[stop-timing] lane-change timing armed in {after} at "
                 f"sim_step={sim_step}, t={sim_time_s:.2f}s"
             )
+
+    if (
+        _lane_change_to_stop_timer["armed"]
+        and _lane_change_to_stop_timer["lane_change_time_s"] is None
+        and state_list
+    ):
+        reference_y = _lane_change_to_stop_timer["reference_y"]
+        reference_orientation = _lane_change_to_stop_timer["reference_orientation"]
+        scan_index = int(_lane_change_to_stop_timer["scan_index"] or 0)
+        for idx in range(max(0, scan_index), len(state_list)):
+            state = state_list[idx]
+            lateral_shift = (
+                abs(float(state.position[1]) - reference_y)
+                if reference_y is not None else 0.0
+            )
+            orientation_change = (
+                abs(float(getattr(state, "orientation", 0.0)) - reference_orientation)
+                if reference_orientation is not None else 0.0
+            )
+            steering = abs(float(getattr(state, "steering_angle", 0.0)))
+            if lateral_shift >= 0.05 or orientation_change >= 0.01 or steering >= 0.01:
+                lane_change_time_s = _state_list_time_s(state_list[:idx + 1])
+                _lane_change_to_stop_timer["lane_change_step"] = idx
+                _lane_change_to_stop_timer["lane_change_time_s"] = lane_change_time_s
+                if lane_change_time_s is not None:
+                    print(
+                        f"[stop-timing] lane change started at "
+                        f"sim_step={idx}, t={lane_change_time_s:.2f}s "
+                        f"(dy={lateral_shift:.2f}m, dpsi={orientation_change:.3f}rad, "
+                        f"steering={steering:.3f}rad)"
+                    )
+                break
+        _lane_change_to_stop_timer["scan_index"] = len(state_list)
 
     if (
         _lane_change_to_stop_timer["lane_change_time_s"] is not None
@@ -679,6 +729,133 @@ _sm_module.BaseStateMachinePlanner._plan_and_optimize = _patched_plan_and_optimi
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════
+# ║  PATCH 6 – bulb-only departure behaviour
+# ╚══════════════════════════════════════════════════════════════════════════════
+_original_bulb_allow_state_transition = _sm_module.BusStopBulbPlanner._allow_state_transition
+_BULB_DEPARTURE_MERGE_LENGTH = 42.0
+_BULB_DEPARTURE_DESIRED_SPEED = 3.5
+_BULB_MISSION_COMPLETE_DISTANCE = 90.0
+
+
+def _bulb_lane_coordinate_system(self, lanelet_id: int, extra_m: float = 120.0):
+    vertices = np.asarray(
+        self.scenario.lanelet_network.find_lanelet_by_id(lanelet_id).center_vertices,
+        dtype=float,
+    )
+    return _sm_module.create_coordinate_system(_extend_path(vertices, extra_m=extra_m))
+
+
+def _bulb_interpolate_centerline_y(self, lanelet_id: int, x_values: np.ndarray) -> np.ndarray:
+    vertices = np.asarray(
+        self.scenario.lanelet_network.find_lanelet_by_id(lanelet_id).center_vertices,
+        dtype=float,
+    )
+    order = np.argsort(vertices[:, 0])
+    xs = vertices[order, 0]
+    ys = vertices[order, 1]
+    return np.interp(x_values, xs, ys, left=ys[0], right=ys[-1])
+
+
+def _bulb_departure_coordinate_system(self, state_current):
+    if self._departing_entry_pose is None:
+        self._departing_entry_pose = (
+            float(state_current.position[0]),
+            float(state_current.position[1]),
+            max(0.0, float(state_current.velocity)),
+        )
+
+    entry_x, entry_y, entry_v = self._departing_entry_pose
+    merge_start_x = entry_x + max(8.0, 1.5 * entry_v + 8.0)
+    merge_end_x = merge_start_x + _BULB_DEPARTURE_MERGE_LENGTH
+    end_x = max(float(self.goal_x) + _BULB_MISSION_COMPLETE_DISTANCE + 45.0, merge_end_x + 80.0)
+    start_x = min(entry_x - 25.0, float(state_current.position[0]) - 20.0)
+    n_pts = max(220, int((end_x - start_x) * 6))
+    x_values = np.linspace(start_x, end_x, n_pts)
+
+    target_y_values = _bulb_interpolate_centerline_y(self, lanelet_id=1, x_values=x_values)
+    denom = max(merge_end_x - merge_start_x, 1e-6)
+    progress = np.clip((x_values - merge_start_x) / denom, 0.0, 1.0)
+    progress = progress ** 3 * (10.0 + progress * (-15.0 + 6.0 * progress))
+    y_values = entry_y * (1.0 - progress) + target_y_values * progress
+    return _sm_module.create_coordinate_system(np.column_stack((x_values, y_values)))
+
+
+def _bulb_lateral_offset_to_lane(self, state, lanelet_id: int) -> Optional[float]:
+    try:
+        coord_sys = _bulb_lane_coordinate_system(self, lanelet_id)
+        _, d = coord_sys.convert_to_curvilinear_coords(
+            float(state.position[0]),
+            float(state.position[1]),
+        )
+        return float(d)
+    except Exception:
+        return None
+
+
+def _patched_bulb_execute_departing(self, state_current, state_list):
+    if getattr(self, "_completed_stop_service", False):
+        coord_sys = _bulb_departure_coordinate_system(self, state_current)
+    else:
+        coord_sys = _bulb_lane_coordinate_system(self, lanelet_id=2)
+    planner, config = self._create_planner(self.current_state, coord_sys, state_current)
+    if getattr(self, "_completed_stop_service", False):
+        config.sampling.d_min = -0.45
+        config.sampling.d_max = 0.45
+        config.sampling.desire_velocity = min(
+            _BULB_DEPARTURE_DESIRED_SPEED,
+            float(getattr(config.sampling, "v_max", _BULB_DEPARTURE_DESIRED_SPEED)),
+        )
+        try:
+            planner.set_permitted_lanelet_ids([1, 2])
+        except Exception as exc:
+            print(f"[bus_stop_bulb_opt] WARNING: could not restrict permitted lanelets: {exc}")
+
+    planner._low_vel_mode = False
+    planner._desired_speed = config.sampling.desire_velocity
+    planner.set_desired_velocity(
+        current_speed=state_current.velocity,
+        desired_velocity=config.sampling.desire_velocity,
+    )
+
+    next_state, _ = self._plan_and_optimize(planner, config, state_list)
+    self._check_state_transition(next_state, config)
+    return next_state
+
+
+def _patched_bulb_allow_state_transition(self, from_state, to_state, next_state, config) -> bool:
+    if isinstance(from_state, _sm_module.DepartingState) and isinstance(to_state, _sm_module.HeadingState):
+        lateral_offset = _bulb_lateral_offset_to_lane(self, next_state, lanelet_id=1)
+        if lateral_offset is None:
+            print("[transition] DEPARTING held: cannot evaluate main-lane lateral offset")
+            return False
+        if abs(lateral_offset) > 0.6:
+            print(
+                f"[transition] DEPARTING held: lateral offset to main lane "
+                f"{lateral_offset:.2f} m > 0.60 m"
+            )
+            return False
+
+    return _original_bulb_allow_state_transition(self, from_state, to_state, next_state, config)
+
+
+def _patched_bulb_is_mission_complete(self, state_current) -> bool:
+    if not self._completed_stop_service or not isinstance(self.current_state, _sm_module.HeadingState):
+        return False
+
+    distance_after_stop = float(state_current.position[0]) - float(self.goal_x)
+    lateral_offset = _bulb_lateral_offset_to_lane(self, state_current, lanelet_id=1)
+    if lateral_offset is None:
+        return False
+
+    return distance_after_stop > _BULB_MISSION_COMPLETE_DISTANCE and abs(lateral_offset) < 0.8
+
+
+_sm_module.BusStopBulbPlanner._execute_departing = _patched_bulb_execute_departing
+_sm_module.BusStopBulbPlanner._allow_state_transition = _patched_bulb_allow_state_transition
+_sm_module.BusStopBulbPlanner._is_mission_complete = _patched_bulb_is_mission_complete
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════
 # ║  RUN SIMULATION
 # ╚══════════════════════════════════════════════════════════════════════════════
 def _export_driven_trajectory_csv(planning_problem_set, ego_vehicles, output_path: Path):
@@ -722,7 +899,7 @@ def _export_driven_trajectory_csv(planning_problem_set, ego_vehicles, output_pat
             )
 
     print(
-        f"[bus_stop_bay_opt] Full trajectory CSV saved to: {output_path} "
+        f"[bus_stop_bulb_opt] Full trajectory CSV saved to: {output_path} "
         f"({len(states)} states)"
     )
 
@@ -749,9 +926,9 @@ def _generate_velocity_profile(
             output_path,
             stationary_threshold,
         )
-        print(f"[bus_stop_bay_opt] Velocity profile saved to: {output_path}")
+        print(f"[bus_stop_bulb_opt] Velocity profile saved to: {output_path}")
     except Exception as exc:
-        print(f"[bus_stop_bay_opt] WARNING: Velocity profile generation failed: {exc}")
+        print(f"[bus_stop_bulb_opt] WARNING: Velocity profile generation failed: {exc}")
 
 
 def _ego_obstacle_from_driven_trajectory(scenario, ego_vehicles):
@@ -784,7 +961,7 @@ def _ego_obstacle_from_driven_trajectory(scenario, ego_vehicles):
     )
 
 
-def _make_bay_passengers() -> Tuple[DynamicObstacle, DynamicObstacle]:
+def _make_bulb_passengers() -> Tuple[DynamicObstacle, DynamicObstacle]:
     t_start, t_end = 264, 276
     shape = Circle(0.5)
 
@@ -839,7 +1016,7 @@ def _make_bay_passengers() -> Tuple[DynamicObstacle, DynamicObstacle]:
     return p1, p2
 
 
-def _create_bay_video(simulated_scenario, planning_problem_set, ego_vehicles, output_dir: Path) -> Path:
+def _create_bulb_video(simulated_scenario, planning_problem_set, ego_vehicles, output_dir: Path) -> Path:
     planning_problem = next(iter(planning_problem_set.planning_problem_dict.values()))
     ego_obstacle = _ego_obstacle_from_driven_trajectory(simulated_scenario, ego_vehicles)
     time_end = int(ego_obstacle.prediction.final_time_step)
@@ -880,32 +1057,9 @@ def _create_bay_video(simulated_scenario, planning_problem_set, ego_vehicles, ou
     car_params.draw_icon = True
     car_params.show_label = False
 
-    draw_sumo_background_vehicles = True
-    bicycle_ids = {3006}
-    bicycles = []
-    others = []
-    if draw_sumo_background_vehicles:
-        for obstacle in simulated_scenario.dynamic_obstacles:
-            if obstacle.obstacle_id in bicycle_ids:
-                obstacle._obstacle_type = ObstacleType.BICYCLE
-                bicycles.append(obstacle)
-            else:
-                others.append(obstacle)
+    others = list(simulated_scenario.dynamic_obstacles)
 
-    bicycle_params = DynamicObstacleParams()
-    bicycle_params.time_begin = 0
-    bicycle_params.time_end = time_end
-    bicycle_params.use_type_color = True
-    bicycle_params.occupancy.draw_occupancies = True
-    bicycle_params.draw_icon = True
-    bicycle_params.vehicle_shape.occupancy.shape.zorder = 100
-    bicycle_params.vehicle_shape.occupancy.shape.opacity = 1
-
-    bicycle_lane_ids = [310, 313, 303, 314, 315]
-    bike_polys = [
-        simulated_scenario.lanelet_network.find_lanelet_by_id(lanelet_id).polygon
-        for lanelet_id in bicycle_lane_ids
-    ]
+    bike_polys = [simulated_scenario.lanelet_network.find_lanelet_by_id(3).polygon]
     bike_dp = MPDrawParams()
     bike_dp.time_begin = 0
     bike_dp.time_end = time_end
@@ -917,7 +1071,7 @@ def _create_bay_video(simulated_scenario, planning_problem_set, ego_vehicles, ou
         400,
         [TrafficSignElement(TrafficSignIDGermany.BUS_STOP)],
         {7},
-        np.array([10.0, -7.5]),
+        np.array([10.0, -4.0]),
     )
     sign_dp = MPDrawParams()
     sign_dp.time_begin = 0
@@ -935,19 +1089,18 @@ def _create_bay_video(simulated_scenario, planning_problem_set, ego_vehicles, ou
     pedestrian_params.occupancy.draw_occupancies = False
     pedestrian_params.vehicle_shape.occupancy.shape.zorder = 1000
 
-    passengers = list(_make_bay_passengers())
+    passengers = list(_make_bulb_passengers())
 
     rnd = MPRenderer()
     rnd.draw_params.axis_visible = False
     rnd.f.subplots_adjust(left=0, right=1, bottom=0, top=1)
-    rnd.plot_limits = [-155.0, 155.0, -18.0, 4.0]
+    rnd.plot_limits = [-155.0, 155.0, -10.0, 4.0]
 
     objects = (
         [simulated_scenario.lanelet_network, planning_problem, ego_obstacle]
         + others
         + bike_polys
         + [bus_stop_sign]
-        + bicycles
         + passengers
     )
     params = (
@@ -955,14 +1108,41 @@ def _create_bay_video(simulated_scenario, planning_problem_set, ego_vehicles, ou
         + [car_params] * len(others)
         + [bike_dp] * len(bike_polys)
         + [sign_dp]
-        + [bicycle_params] * len(bicycles)
         + [pedestrian_params] * len(passengers)
     )
 
-    output_path = output_dir / "sumo_result_bus_stop_bay_opt.gif"
+    output_path = output_dir / "sumo_result_bus_stop_bulb_opt.gif"
     rnd.create_video(objects, str(output_path), draw_params=params, fig_size=[15, 8], dpi=120, progress=False)
     plt.close(rnd.f)
     return output_path
+
+
+@contextmanager
+def _scenario_config_override(config_path: Path, cfg: dict):
+    """Serve the target scenario config to helpers that read scenario.yaml."""
+    original_open = builtins.open
+    config_text = yaml.safe_dump(cfg)
+    resolved_config_path = config_path.resolve()
+
+    def patched_open(file, mode="r", *args, **kwargs):
+        try:
+            file_path = Path(file).resolve()
+        except TypeError:
+            return original_open(file, mode, *args, **kwargs)
+
+        read_only = "r" in mode and not any(flag in mode for flag in ("w", "a", "+"))
+        if file_path == resolved_config_path and read_only:
+            if "b" in mode:
+                encoding = kwargs.get("encoding") or "utf-8"
+                return io.BytesIO(config_text.encode(encoding))
+            return io.StringIO(config_text)
+        return original_open(file, mode, *args, **kwargs)
+
+    builtins.open = patched_open
+    try:
+        yield
+    finally:
+        builtins.open = original_open
 
 
 def run_simulation():
@@ -972,23 +1152,33 @@ def run_simulation():
     with open(config_path, "r") as f:
         cfg = yaml.safe_load(f)
 
-    bus_stop: str = cfg["scenario"]["type"]
-    scenario_dir = path_root / "scenarios" / bus_stop
-    output_dir = path_root / "experiments" / "output_result" / "result_bay"
+    configured_bus_stop = cfg.get("scenario", {}).get("type")
+    cfg = copy.deepcopy(cfg)
+    cfg.setdefault("scenario", {})["type"] = _TARGET_SCENARIO
 
-    print(f"[bus_stop_bay_opt] Scenario: {bus_stop}")
+    bus_stop: str = _TARGET_SCENARIO
+    scenario_dir = path_root / "scenarios" / bus_stop
+    output_dir = path_root / "experiments" / "output_result" / "result_bulb"
+
+    print(f"[bus_stop_bulb_opt] Scenario: {bus_stop}")
+    if configured_bus_stop != bus_stop:
+        print(
+            f"[bus_stop_bulb_opt] Overriding scenario.yaml type "
+            f"{configured_bus_stop!r} for this run only."
+        )
     if cfg.get("debug", {}).get("use_post_opt"):
-        print("[bus_stop_bay_opt] debug.use_post_opt is ignored by the state machine.")
-    print("[bus_stop_bay_opt] Planner mode: CommonRoad reactive planner only.")
-    print("[bus_stop_bay_opt] Multiprocessing disabled – exceptions now propagate.\n")
+        print("[bus_stop_bulb_opt] debug.use_post_opt is ignored by the state machine.")
+    print("[bus_stop_bulb_opt] Planner mode: CommonRoad reactive planner only.")
+    print("[bus_stop_bulb_opt] Multiprocessing disabled – exceptions now propagate.\n")
 
     try:
-        simulated_scenario, planning_problem_set, ego_vehicles = simulate_with_planner(
-            interactive_scenario_path=str(scenario_dir),
-            return_on_planner_completion=True,
-        )
+        with _scenario_config_override(config_path, cfg):
+            simulated_scenario, planning_problem_set, ego_vehicles = simulate_with_planner(
+                interactive_scenario_path=str(scenario_dir),
+                return_on_planner_completion=True,
+            )
         output_dir.mkdir(parents=True, exist_ok=True)
-        trajectory_path = output_dir / "bus_stop_bay_opt_trajectory.csv"
+        trajectory_path = output_dir / "bus_stop_bulb_opt_trajectory.csv"
         _export_driven_trajectory_csv(
             planning_problem_set,
             ego_vehicles,
@@ -996,15 +1186,15 @@ def run_simulation():
         )
         _generate_velocity_profile(
             trajectory_path,
-            output_dir / "bus_stop_bay_opt_velocity_profile.png",
+            output_dir / "bus_stop_bulb_opt_velocity_profile.png",
         )
-        gif_path = _create_bay_video(
+        gif_path = _create_bulb_video(
             simulated_scenario,
             planning_problem_set,
             ego_vehicles,
             output_dir,
         )
-        print(f"[bus_stop_bay_opt] SUMO trajectory GIF saved to: {gif_path}")
+        print(f"[bus_stop_bulb_opt] SUMO trajectory GIF saved to: {gif_path}")
     except VehicleLeftScenarioError as exc:
         print(f"[INFO] {exc}")
     except _PROJECTION_DOMAIN_ERRORS as exc:
@@ -1398,7 +1588,7 @@ def visualise(cfg: dict, bus_stop: str):
     plt.tight_layout()
     # Leave room at the bottom for the legend that sits outside ax_map
     plt.subplots_adjust(bottom=0.18)
-    out = path_root / "experiments" / "output_result" / "result_bay" / "bus_stop_bay_opt.png"
+    out = path_root / "experiments" / "output_result" / "result_bulb" / "bus_stop_bulb_opt.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out), dpi=150, bbox_inches="tight")
     print(f"\n[debug] Figure saved to {out}")
@@ -1529,10 +1719,10 @@ def print_summary():
 # ── entry point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     # ── set up logging to file ────────────────────────────────────────────────
-    _log_dir = path_root / "experiments" / "output_result" / "result_bay"
+    _log_dir = path_root / "experiments" / "output_result" / "result_bulb"
     _log_dir.mkdir(parents=True, exist_ok=True)
     _log_ts = time.strftime("%Y%m%d_%H%M%S")
-    _log_path = _log_dir / f"bus_stop_bay_opt_{_log_ts}.log"
+    _log_path = _log_dir / f"bus_stop_bulb_opt_{_log_ts}.log"
     _log_file = open(_log_path, "w", encoding="utf-8", buffering=1)
     sys.stdout = _TeeStream(sys.__stdout__, _log_file)
     sys.stderr = _TeeStream(sys.__stderr__, _log_file)

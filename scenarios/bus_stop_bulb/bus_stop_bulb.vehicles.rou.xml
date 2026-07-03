@@ -21,9 +21,9 @@
         <route edges="3" />
     </vehicle>
 
-    <vehicle id="4"  depart="15.27" departLane="2" departPos="20" departSpeed="max">
-        <route edges="3" />
-    </vehicle>
+<!--    <vehicle id="4"  depart="15.27" departLane="2" departPos="20" departSpeed="max">-->
+<!--        <route edges="3" />-->
+<!--    </vehicle>-->
 
     <vehicle id="5"  depart="35.27" departLane="0" departPos="20" departSpeed="0.5" maxSpeed="1">
         <route edges="3" />

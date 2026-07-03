@@ -15,7 +15,12 @@ with open(config_path, "r") as f:
     cfg = yaml.safe_load(f)
 
 bus_stop = cfg["scenario"]["type"]
-solutions_dir = path_root / "experiments"/"output_result"
+if bus_stop == "bus_stop_bay":
+    solutions_dir = path_root / "experiments" / "output_result" / "result_bay"
+elif bus_stop == "bus_stop_bulb":
+    solutions_dir = path_root / "experiments" / "output_result" / "result_bulb"
+else:
+    solutions_dir = path_root / "experiments" / "output_result"
 bus_stop_no_underscore = bus_stop.replace("_", "")
 solution_file = (
     solutions_dir / f"solution_KS1:WX1:DEU_{bus_stop_no_underscore}-1:2020a.xml"

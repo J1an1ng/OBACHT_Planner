@@ -13,7 +13,8 @@ Both helpers follow the same conventions:
 
 * The YAML is searched at ``<repo_root>/configurations/scenario.yaml`` unless
   an explicit *cfg_path* is provided.
-* All artefacts are written to ``<repo_root>/experiments/output_result``.
+* All artefacts are written to the scenario-specific folder under
+  ``<repo_root>/experiments/output_result``.
 * Filenames encode the scenario type and whether post‑optimisation is active.
 """
 
@@ -44,6 +45,14 @@ _CFG_DEFAULT: Final[Path] = _REPO_ROOT / "configurations" / "scenario.yaml"
 _OUT_DIR: Final[Path] = _REPO_ROOT / "experiments" / "output_result"
 _SCENARIO_DIR: Final[Path] = _REPO_ROOT / "scenarios"
 
+
+def _scenario_output_dir(scenario_type: str) -> Path:
+    if scenario_type == "bus_stop_bay":
+        return _OUT_DIR / "result_bay"
+    if scenario_type == "bus_stop_bulb":
+        return _OUT_DIR / "result_bulb"
+    return _OUT_DIR
+
 # ---------------------------------------------------------------------------
 # Public API – 1) cost evaluation
 # ---------------------------------------------------------------------------
@@ -63,8 +72,9 @@ def evaluate_solution_costs(
 
     scenario_type = cfg["scenario"]["type"]
     solution_tag = scenario_type.replace("_", "")
+    out_dir = _scenario_output_dir(scenario_type)
 
-    solution_file = _OUT_DIR / f"solution_KS1:WX1:DEU_{solution_tag}-1:2020a.xml"
+    solution_file = out_dir / f"solution_KS1:WX1:DEU_{solution_tag}-1:2020a.xml"
     scenario_file = _SCENARIO_DIR / scenario_type / f"{scenario_type}.xml"
 
     if verbose:
@@ -81,7 +91,8 @@ def evaluate_solution_costs(
         rows = _flatten_solution_result(sol_result)
         opt_flag = "postopt" if cfg["debug"].get("use_post_opt", False) else "original"
         csv_name = f"{csv_stem}_{scenario_type}_{opt_flag}.csv"
-        out_path = _OUT_DIR / csv_name
+        out_path = out_dir / csv_name
+        out_dir.mkdir(parents=True, exist_ok=True)
         pd.DataFrame(rows).to_csv(out_path, index=False)
         if verbose:
             print(f"[INFO] CSV saved : {out_path}")
@@ -119,8 +130,9 @@ def simulate_and_render(
     cfg = yaml.safe_load(cfg_path.read_text())
     scenario_type = cfg["scenario"]["type"]
     solution_tag = scenario_type.replace("_", "")
+    out_dir = _scenario_output_dir(scenario_type)
 
-    solution_file = _OUT_DIR / f"solution_KS1:WX1:DEU_{solution_tag}-1:2020a.xml"
+    solution_file = out_dir / f"solution_KS1:WX1:DEU_{solution_tag}-1:2020a.xml"
     scenario_dir = _SCENARIO_DIR / scenario_type
     scenario_file = scenario_dir / f"{scenario_type}.cr.xml"
 
@@ -172,8 +184,8 @@ def simulate_and_render(
     draw_params.dynamic_obstacle.trajectory.draw_trajectory = True
 
     # --- Render -------------------------------------------------------
-    _OUT_DIR.mkdir(parents=True, exist_ok=True)
-    gif_name = _OUT_DIR / f"{gif_stem}_{scenario_type}.gif"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    gif_name = out_dir / f"{gif_stem}_{scenario_type}.gif"
 
     renderer = MPRenderer()
     renderer.create_video(

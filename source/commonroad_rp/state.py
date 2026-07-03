@@ -101,13 +101,13 @@ def append_state_to_list(state_list: List[State], new_state: State) -> None:
     if not isinstance(state_list, list) or any(
         not isinstance(s, State) for s in state_list
     ):
-        raise TypeError("state_list 必须是 List[State]，且元素均为 State")
+        raise TypeError("state_list must be List[State] and every element must be a State")
 
     if not isinstance(new_state, State):
-        raise TypeError("new_state 必须是 State")
+        raise TypeError("new_state must be a State")
 
     if not state_list:
-        raise ValueError("state_list 不能为空")
+        raise ValueError("state_list cannot be empty")
 
     ref_state = state_list[0]
     ref_attrs = set(ref_state.used_attributes)

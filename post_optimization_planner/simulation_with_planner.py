@@ -19,7 +19,13 @@ with open(config_path, "r") as f:
 bus_stop = cfg["scenario"]["type"]
 #
 scenario_dir = os.path.join(path_root, "scenarios")
-solution_dir = os.path.join(path_root, f"experiments/output_result/{bus_stop}_commonroad_rp")
+if bus_stop == "bus_stop_bay":
+    output_dir = os.path.join(path_root, "experiments", "output_result", "result_bay")
+elif bus_stop == "bus_stop_bulb":
+    output_dir = os.path.join(path_root, "experiments", "output_result", "result_bulb")
+else:
+    output_dir = os.path.join(path_root, "experiments", "output_result")
+solution_dir = os.path.join(output_dir, f"{bus_stop}_commonroad_rp")
 
 
 solution = motion_planner_interactive(

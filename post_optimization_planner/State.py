@@ -34,8 +34,8 @@ class PlannerState(ABC):
         self._coord_system = None
     
     @abstractmethod
-    def get_config_filename(self) -> str:
-        """Return the YAML configuration filename for this state"""
+    def get_config_filename(self) -> Optional[str]:
+        """Return the YAML configuration filename for planner-backed states."""
         pass
     
     @abstractmethod
@@ -102,20 +102,6 @@ class DepartingState(PlannerState):
              return HeadingState(self.scenario_type)
         return None
     
-    def create_dynamic_coordinate_system(self, state_current) -> CoordinateSystem:
-        """Create dynamic coordinate system for bay scenario based on current state"""
-        if self.scenario_type != "bus_stop_bay":
-            raise RuntimeError("Dynamic coordinate system only for bay scenario")
-        
-        if state_current.velocity < 2:
-            x_values = np.linspace(-150, 150, 3000)
-            y_values = np.full_like(x_values, state_current.position[1])
-            reference_path = np.column_stack((x_values, y_values))
-            return create_coordinate_system(reference_path)
-        else:
-            # This would need the scenario passed in, handled in planner
-            return None
-
 
 class HeadingState(PlannerState):
     """HEADING state implementation"""
@@ -176,7 +162,7 @@ class ArrivingState(PlannerState):
         elif self.scenario_type == "bus_stop_bay":
             threshold = config.planning.distance_arriving_to_next_to_before_stopping
             if abs(goal_x - next_state.position[0]) < threshold:
-                return BeforeStoppingAlignState(self.scenario_type)
+                return BeforeStoppingMergeState(self.scenario_type)
         return None
 
 
@@ -214,7 +200,7 @@ class BeforeStoppingState(PlannerState):
 
 
 class BeforeStoppingAlignState(BeforeStoppingState):
-    """Stabilize pose before starting the bay merge."""
+    """Align the bus with the bay stop line after the merge."""
 
     def get_config_filename(self) -> str:
         return "before_stopping_align.yaml"
@@ -224,16 +210,8 @@ class BeforeStoppingAlignState(BeforeStoppingState):
 
     def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
         threshold = config.planning.distance_arriving_to_next_to_before_stopping
-        steering = abs(float(getattr(next_state, "steering_angle", 0.0)))
-        yaw_rate = abs(float(getattr(next_state, "yaw_rate", 0.0)))
-        max_steering = 0.08
-        max_yaw_rate = 0.06
-        if (
-            abs(goal_x - next_state.position[0]) < threshold
-            and steering < max_steering
-            and yaw_rate < max_yaw_rate
-        ):
-            return BeforeStoppingMergeState(self.scenario_type)
+        if abs(goal_x - next_state.position[0]) < threshold:
+            return BeforeStoppingFinalState(self.scenario_type)
         return None
 
 
@@ -249,7 +227,7 @@ class BeforeStoppingMergeState(BeforeStoppingState):
     def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
         threshold = config.planning.distance_arriving_to_stopping
         if abs(goal_x - next_state.position[0]) < threshold:
-            return BeforeStoppingFinalState(self.scenario_type)
+            return BeforeStoppingAlignState(self.scenario_type)
         return None
 
 
@@ -305,6 +283,24 @@ class StoppingState(PlannerState):
         return None
 
 
+class EmergencyBrakeState(PlannerState):
+    """Safety fallback state for controlled braking under imminent collision risk."""
+
+    def get_config_filename(self) -> Optional[str]:
+        return None
+
+    def get_state_name(self) -> str:
+        return "EMERGENCY_BRAKE"
+
+    def create_coordinate_system(self, scenario, planning_problem) -> CoordinateSystem:
+        return None
+
+    def check_transition(self, next_state, config, goal_x: float) -> Optional[PlannerState]:
+        # Recovery is handled by the state machine after the vehicle has stopped
+        # and imminent_collision_risk is false.
+        return None
+
+
 # Factory function to create initial state
 def create_initial_state(scenario_type: str, state_name: str = "HEADING") -> PlannerState:
     """Create an initial state instance based on scenario type and state name"""
@@ -317,6 +313,7 @@ def create_initial_state(scenario_type: str, state_name: str = "HEADING") -> Pla
         "BEFORE_STOPPING_MERGE": BeforeStoppingMergeState,
         "BEFORE_STOPPING_FINAL": BeforeStoppingFinalState,
         "STOPPING": StoppingState,
+        "EMERGENCY_BRAKE": EmergencyBrakeState,
     }
     
     if state_name not in state_map:
@@ -335,7 +332,7 @@ def create_initial_state(scenario_type: str, state_name: str = "HEADING") -> Pla
 def get_valid_states_for_scenario(scenario_type: str) -> set:
     """Get the set of valid state names for a given scenario type"""
     if scenario_type == "bus_stop_bulb":
-        return {"DEPARTING", "HEADING", "ARRIVING", "STOPPING"}
+        return {"DEPARTING", "HEADING", "ARRIVING", "STOPPING", "EMERGENCY_BRAKE"}
     elif scenario_type == "bus_stop_bay":
         return {
             "DEPARTING",
@@ -345,6 +342,7 @@ def get_valid_states_for_scenario(scenario_type: str) -> set:
             "BEFORE_STOPPING_MERGE",
             "BEFORE_STOPPING_FINAL",
             "STOPPING",
+            "EMERGENCY_BRAKE",
         }
     else:
         raise ValueError(f"Unknown scenario type: {scenario_type}")

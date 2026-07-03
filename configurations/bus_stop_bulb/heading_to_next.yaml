@@ -2,7 +2,8 @@ planning:
   dt: 0.1
   replanning_frequency: 5
   time_steps_computation: 40
-  distance_heading_to_next_to_arriving: 100.0
+  # Keep ARRIVING short: target ARRIVING -> STOPPING duration <= 10 s.
+  distance_heading_to_next_to_arriving: 50.0
   low_vel_mode_threshold : -3.0
 
 vehicle:
@@ -23,8 +24,8 @@ debug:
 
 sampling:
   t_min: 0.2
-  v_max: 15
-  v_min: 5
+  v_max: 10.05
+  v_min: 9.95
   d_min: -3
   d_max: 0
   desire_velocity: 10.0

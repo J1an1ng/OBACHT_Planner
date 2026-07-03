@@ -25,8 +25,8 @@ sampling:
   t_min: 0.2
   d_max: 1.5
   d_min: -1.5
-  v_max: 10
-  v_min: 0
+  v_max: 5.05
+  v_min: 4.95
   desire_velocity: 5.0
 
 sumo:

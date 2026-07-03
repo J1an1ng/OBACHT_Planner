@@ -19,8 +19,8 @@ sampling:
   t_min: 0.2
   d_max: 0.1
   d_min: -0.1
-  v_max: 0
-  v_min: 0
+  v_max: 1.0e-5
+  v_min: -1.0e-5
   longitudinal_mode: stopping
   s_max: 0.1
   s_min: -0.1

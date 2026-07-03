@@ -43,7 +43,12 @@ def evaluate_solution_costs(
     # ------------------------------------------------------------------
     # 2) Build absolute paths for the scenario and solution files
     scenario_type = cfg["scenario"]["type"]
-    solutions_dir = repo_root / "experiments" / "output_result"
+    if scenario_type == "bus_stop_bay":
+        solutions_dir = repo_root / "experiments" / "output_result" / "result_bay"
+    elif scenario_type == "bus_stop_bulb":
+        solutions_dir = repo_root / "experiments" / "output_result" / "result_bulb"
+    else:
+        solutions_dir = repo_root / "experiments" / "output_result"
     solution_tag = scenario_type.replace("_", "")
 
     solution_file = (

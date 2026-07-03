@@ -2,7 +2,7 @@ planning:
   dt: 0.1
   replanning_frequency: 5
   time_steps_computation: 60
-  distance_arriving_to_stopping: 8.0
+  distance_arriving_to_stopping: 14.0
 
 vehicle:
   id_type_vehicle: 2
@@ -19,9 +19,9 @@ sampling:
   t_min: 0.2
   d_max: 0.8
   d_min: -0.8
-  v_max: 4.0
-  v_min: 0.0
-  desire_velocity: 1.2
+  v_max: 3.55
+  v_min: 3.45
+  desire_velocity: 3.5
   longitudinal_mode: velocity_keeping
 
 sumo:
