@@ -1304,20 +1304,6 @@ def _format_time_ms(value: Optional[float]) -> str:
     return f"{value:.0f} ms"
 
 
-def _compact_state_name(name: str) -> str:
-    aliases = {
-        "HEADING": "HEAD",
-        "ARRIVING": "ARR",
-        "BEFORE_STOPPING_ALIGN": "ALIGN",
-        "BEFORE_STOPPING_MERGE": "MERGE",
-        "BEFORE_STOPPING_FINAL": "FINAL",
-        "BEFORE_STOPPING": "PRESTOP",
-        "STOPPING": "STOP",
-        "DEPARTING": "DEPART",
-    }
-    return aliases.get(name, name)
-
-
 def _trajectory_segments(records: List[dict]) -> List[dict]:
     segments: List[dict] = []
     current: Optional[dict] = None
@@ -1331,92 +1317,6 @@ def _trajectory_segments(records: List[dict]) -> List[dict]:
         current["records"].append(rec)
         current["positions"].append(rec["position"])
     return segments
-
-
-def _segment_avg_time_ms(segment: dict) -> Optional[float]:
-    times = []
-    for rec in segment["records"]:
-        time_ms = _planning_time_ms(rec)
-        if time_ms is not None:
-            times.append(time_ms)
-    return sum(times) / len(times) if times else None
-
-
-def _rects_overlap(a: Tuple[float, float, float, float], b: Tuple[float, float, float, float]) -> bool:
-    return not (a[1] < b[0] or b[1] < a[0] or a[3] < b[2] or b[3] < a[2])
-
-
-def _add_segment_time_labels(ax, segments: List[dict]):
-    if not segments:
-        return
-
-    x_min, x_max = ax.get_xlim()
-    y_min, y_max = ax.get_ylim()
-    x_span = max(x_max - x_min, 1.0)
-    y_span = max(y_max - y_min, 1.0)
-    occupied: List[Tuple[float, float, float, float]] = []
-
-    offsets = [
-        (0.00, 0.18),
-        (0.00, -0.18),
-        (0.06, 0.28),
-        (-0.06, -0.28),
-        (-0.06, 0.28),
-        (0.06, -0.28),
-        (0.12, 0.18),
-        (-0.12, -0.18),
-        (-0.12, 0.18),
-        (0.12, -0.18),
-    ]
-
-    for idx, segment in enumerate(segments):
-        positions = np.asarray(segment["positions"])
-        if positions.size == 0:
-            continue
-        anchor = positions[len(positions) // 2]
-        label = f"{_compact_state_name(segment['sm_state'])}\navg {_format_time_ms(_segment_avg_time_ms(segment))}"
-        max_line_len = max(len(line) for line in label.splitlines())
-        label_w = max(15.0, max_line_len * 0.014 * x_span)
-        label_h = 0.22 * y_span
-
-        chosen = None
-        for ox, oy in offsets[idx % len(offsets):] + offsets[:idx % len(offsets)]:
-            tx = float(anchor[0] + ox * x_span)
-            ty = float(anchor[1] + oy * y_span)
-            tx = min(max(tx, x_min + 0.04 * x_span), x_max - 0.04 * x_span)
-            ty = min(max(ty, y_min + 0.13 * y_span), y_max - 0.11 * y_span)
-            rect = (
-                tx - label_w / 2.0,
-                tx + label_w / 2.0,
-                ty - label_h / 2.0,
-                ty + label_h / 2.0,
-            )
-            if not any(_rects_overlap(rect, used) for used in occupied):
-                chosen = (tx, ty, rect)
-                break
-
-        if chosen is None:
-            tx = float(anchor[0])
-            ty = min(max(float(anchor[1] + 0.20 * y_span), y_min + 0.13 * y_span), y_max - 0.11 * y_span)
-            chosen = (
-                tx,
-                ty,
-                (tx - label_w / 2.0, tx + label_w / 2.0, ty - label_h / 2.0, ty + label_h / 2.0),
-            )
-
-        tx, ty, rect = chosen
-        occupied.append(rect)
-        ax.text(
-            tx,
-            ty,
-            label,
-            fontsize=7.2,
-            color="#1f1f1f",
-            ha="center",
-            va="center",
-            zorder=12,
-            bbox=dict(boxstyle="round,pad=0.22", fc="white", ec="#666666", lw=0.55, alpha=0.92),
-        )
 
 
 def visualise(cfg: dict, bus_stop: str):
@@ -1666,7 +1566,6 @@ def visualise(cfg: dict, bus_stop: str):
     ax_map.set_ylim(min_xy[1] - pad_y, max_xy[1] + pad_y)
     ax_map.set_xlabel("x [m]")
     ax_map.set_ylabel("y [m]")
-    _add_segment_time_labels(ax_map, trajectory_segments)
     # Place legend just outside the axes, keeping the map clear for poster use.
     ax_map.legend(
         handles=legend_handles,
