@@ -748,10 +748,19 @@ def _generate_velocity_profile(
             velocity_values,
             output_path,
             stationary_threshold,
+            lane_change_to_stop_interval=_lane_change_to_stop_interval(),
         )
         print(f"[bus_stop_bay_opt] Velocity profile saved to: {output_path}")
     except Exception as exc:
         print(f"[bus_stop_bay_opt] WARNING: Velocity profile generation failed: {exc}")
+
+
+def _lane_change_to_stop_interval() -> Tuple[float, float] | None:
+    start = _lane_change_to_stop_timer.get("lane_change_time_s")
+    end = _lane_change_to_stop_timer.get("stop_time_s")
+    if start is None or end is None or end <= start:
+        return None
+    return float(start), float(end)
 
 
 def _ego_obstacle_from_driven_trajectory(scenario, ego_vehicles):

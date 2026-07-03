@@ -86,6 +86,7 @@ def plot_velocity_profile(
     velocity: np.ndarray,
     output_path: Path,
     stationary_threshold: float,
+    lane_change_to_stop_interval: tuple[float, float] | None = None,
 ) -> None:
     """Create and save an academic-style velocity profile line chart."""
     plt.rcParams.update(
@@ -101,6 +102,38 @@ def plot_velocity_profile(
     )
 
     fig, ax = plt.subplots(figsize=(9, 4.8))
+
+    if lane_change_to_stop_interval is not None:
+        interval_start, interval_end = lane_change_to_stop_interval
+        if interval_end > interval_start:
+            interval_start = max(float(time[0]), float(interval_start))
+            interval_end = min(float(time[-1]), float(interval_end))
+            duration_s = interval_end - interval_start
+            ax.axvspan(
+                interval_start,
+                interval_end,
+                color="#F4A261",
+                alpha=0.22,
+                label="Lane-change start to complete stop",
+                zorder=0,
+            )
+            ax.axvline(interval_start, color="#B65F00", linestyle="--", linewidth=0.9)
+            ax.axvline(interval_end, color="#B65F00", linestyle="--", linewidth=0.9)
+            ax.annotate(
+                f"Lane-change -> stop\n{duration_s:.2f} s",
+                xy=((interval_start + interval_end) / 2, max(velocity) * 0.78),
+                xytext=((interval_start + interval_end) / 2, max(velocity) * 0.78),
+                ha="center",
+                va="center",
+                color="#7A3A00",
+                bbox={
+                    "boxstyle": "round,pad=0.25",
+                    "fc": "white",
+                    "ec": "#B65F00",
+                    "alpha": 0.92,
+                },
+            )
+
     ax.plot(time, velocity, color="#0066CC", linewidth=1.8, label="Vehicle velocity")
     ax.fill_between(time, velocity, color="#0066CC", alpha=0.08)
 
@@ -141,7 +174,8 @@ def plot_velocity_profile(
         arrowprops={"arrowstyle": "->", "color": "#555555", "linewidth": 0.9},
     )
 
-    ax.set_title("Velocity Profile of the Complete bus_stop_bay_opt Planning Process")
+    profile_name = output_path.stem.removesuffix("_velocity_profile")
+    ax.set_title(f"Velocity Profile of the Complete {profile_name} Planning Process")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Velocity (m/s)")
     ax.set_xlim(time[0], time[-1])
