@@ -102,6 +102,7 @@ def plot_velocity_profile(
     )
 
     fig, ax = plt.subplots(figsize=(9, 4.8))
+    stopping_procedure_end: float | None = None
 
     if lane_change_to_stop_interval is not None:
         interval_start, interval_end = lane_change_to_stop_interval
@@ -109,20 +110,22 @@ def plot_velocity_profile(
             interval_start = max(float(time[0]), float(interval_start))
             interval_end = min(float(time[-1]), float(interval_end))
             duration_s = interval_end - interval_start
+            stopping_procedure_end = interval_end
             ax.axvspan(
                 interval_start,
                 interval_end,
                 color="#F4A261",
                 alpha=0.22,
-                label="Lane-change start to complete stop",
+                label="Stopping procedure",
                 zorder=0,
             )
             ax.axvline(interval_start, color="#B65F00", linestyle="--", linewidth=0.9)
             ax.axvline(interval_end, color="#B65F00", linestyle="--", linewidth=0.9)
+            annotation_x = interval_start + duration_s * 0.6
             ax.annotate(
-                f"Lane-change -> stop\n{duration_s:.2f} s",
-                xy=((interval_start + interval_end) / 2, max(velocity) * 0.78),
-                xytext=((interval_start + interval_end) / 2, max(velocity) * 0.78),
+                f"Stopping procedure\n{duration_s:.2f} s",
+                xy=(annotation_x, max(velocity) * 0.78),
+                xytext=(annotation_x, max(velocity) * 0.78),
                 ha="center",
                 va="center",
                 color="#7A3A00",
@@ -140,8 +143,12 @@ def plot_velocity_profile(
     stationary = longest_stationary_interval(velocity, stationary_threshold)
     if stationary is not None:
         start_idx, end_idx = stationary
-        start_time = time[start_idx]
+        start_time = float(time[start_idx])
         end_time = time[end_idx]
+        if stopping_procedure_end is not None and start_time < stopping_procedure_end:
+            start_time = stopping_procedure_end
+        if end_time <= start_time:
+            start_time = float(time[start_idx])
         ax.axvspan(
             start_time,
             end_time,
