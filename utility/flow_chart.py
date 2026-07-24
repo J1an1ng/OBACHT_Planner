@@ -375,11 +375,8 @@ def _draw_emergency_brake_overlay(
         ax,
         entry_label_x,
         entry_label_y,
-        (
-            r"$\mathrm{planning\_failed}\ \vee\ \mathrm{collision\_risk}$"
-            if compact
-            else r"$\mathrm{trajectory\_planning\_failed}\ \vee\ \mathrm{collision\_risk}$"
-        ),
+        r"$\mathrm{trajectory}=\varnothing"
+        r"\ \vee\ \mathrm{imminent\_collision\_risk}$",
         fontsize=fontsize,
     )
 
@@ -405,8 +402,8 @@ def _draw_emergency_brake_overlay(
             "\n".join(
                 [
                     r"$|v|,|a|,|\delta|\leq10^{-3}$",
-                    r"$\mathrm{risk\ cleared}$",
-                    r"$\mathrm{restart\ from}\ \mathrm{ego\_state}_{\mathrm{stop}}$",
+                    r"$\wedge\ \neg\mathrm{imminent\_collision\_risk}$",
+                    r"$x_0\leftarrow\mathrm{ego\_state}_{\mathrm{stop}}$",
                 ]
             )
             if compact
@@ -645,10 +642,11 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         final["cy"] + 0.60,
         "\n".join(
             [
-                rf"transition gate: $-{_num(final_to_stopping)}"
+                rf"$-{_num(final_to_stopping)}"
                 r"<x-x_{\mathrm{goal}}\leq1.5\,\mathrm{m}$",
-                r"$v\leq0.55\,\mathrm{m/s},\ |\delta|\leq0.12\,\mathrm{rad}$",
-                r"$|y-y_{\mathrm{goal}}|\leq1.2\,\mathrm{m}$",
+                r"$\wedge\ v\leq0.55\,\mathrm{m/s}"
+                r"\ \wedge\ |\delta|\leq0.12\,\mathrm{rad}$",
+                r"$\wedge\ |y-y_{\mathrm{goal}}|\leq1.2\,\mathrm{m}$",
             ]
         ),
         fontsize=bay_font_size,
@@ -674,7 +672,7 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         ax,
         (service["left"] + departing["right"]) / 2,
         3.38,
-        r"$\mathrm{stopping\ counter}>10$",
+        r"$\mathrm{stopping\_counter}>10$",
         fontsize=bay_font_size,
     )
 
@@ -691,8 +689,9 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         "\n".join(
             [
                 rf"$v\geq{_num(departing_v)}\,\mathrm{{m/s}}$",
-                r"$|\psi|<0.02\,\mathrm{rad},\ |a|<0.2\,\mathrm{m/s^2}$",
-                r"lane offset $\leq0.6\,\mathrm{m}$",
+                r"$\wedge\ |\psi|<0.02\,\mathrm{rad}"
+                r"\ \wedge\ |a|<0.2\,\mathrm{m/s^2}$",
+                r"$\wedge\ |d_{\mathrm{lanelet\ 2}}|\leq0.6\,\mathrm{m}$",
             ]
         ),
         fontsize=bay_font_size,
@@ -874,7 +873,7 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
         ax,
         (service["left"] + departing["right"]) / 2,
         service["cy"] + 0.35,
-        r"$\mathrm{stopping\ counter}>10$",
+        r"$\mathrm{stopping\_counter}>10$",
     )
 
     _arrow(
@@ -890,9 +889,9 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
         "\n".join(
             [
                 rf"$v\geq{_num(departing_v)}\,\mathrm{{m/s}}$",
-                r"$|\psi|<0.02\,\mathrm{rad}$",
-                r"$|a|<0.2\,\mathrm{m/s^2}$",
-                r"$|d_{\mathrm{lanelet\ 1}}|\leq0.6\,\mathrm{m}$",
+                r"$\wedge\ |\psi|<0.02\,\mathrm{rad}$",
+                r"$\wedge\ |a|<0.2\,\mathrm{m/s^2}$",
+                r"$\wedge\ |d_{\mathrm{lanelet\ 1}}|\leq0.6\,\mathrm{m}$",
             ]
         ),
     )
