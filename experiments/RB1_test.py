@@ -336,8 +336,8 @@
 #         # Process predicate name
 #         pred_display = pred[:-3] if len(pred) > 3 and pred.endswith("_0") else pred
 #
-#         # ===== 方案1: 直接跳过 keeps_type_speed_limit =====
-#         # 如果你想完全避免单独显示 keeps_type_speed_limit
+#         # ===== Option 1: skip keeps_type_speed_limit directly =====
+#         # Use this to avoid displaying keeps_type_speed_limit separately
 #         if pred_display == "keeps_type_speed_limit":
 #             continue
 #
@@ -388,8 +388,8 @@
 #     for time_sec, (trans_name, color) in STATE_TRANSITIONS.items():
 #         if '→' in trans_name:
 #             a, b = [p.strip() for p in trans_name.split('→', 1)]
-#             label = f"{time_sec}s: {a}→{b}"  # 用完整文案
-#             # 如果担心太长，可以换行显示：
+#             label = f"{time_sec}s: {a}→{b}"  # Use the full label
+#             # If the label is too long, split it across lines:
 #             # label = f"{time_sec}s:\n{a}→{b}"
 #         else:
 #             label = f"{time_sec}s: {trans_name}"
@@ -695,14 +695,14 @@ if robustness_all:
     # Define specific styles for each predicate
     # All predicates use dashed lines, only two have markers
     predicate_styles = {
-        'RB_1': {'color': '#CC0000', 'marker': None, 'linestyle': '-'},  # 红色，实线，无标记
-        'keeps_lane_speed_limit': {'color': '#0066CC', 'marker': 'o', 'linestyle': '--'},  # 蓝色，虚线，圆圈标记
-        'keeps_standing_passenger_speed_limit': {'color': '#FF6600', 'marker': None, 'linestyle': '--'},  # 橙色，虚线，三角标记
-        'keeps_type_speed_limit': {'color': '#6600CC', 'marker': 'x', 'linestyle': '--'},  # 紫色，虚线，叉标记
+        'RB_1': {'color': '#CC0000', 'marker': None, 'linestyle': '-'},  # Red, solid, no marker
+        'keeps_lane_speed_limit': {'color': '#0066CC', 'marker': 'o', 'linestyle': '--'},  # Blue, dashed, circle marker
+        'keeps_standing_passenger_speed_limit': {'color': '#FF6600', 'marker': None, 'linestyle': '--'},  # Orange, dashed, no marker
+        'keeps_type_speed_limit': {'color': '#6600CC', 'marker': 'x', 'linestyle': '--'},  # Purple, dashed, cross marker
         'keeps_lane_speed_limit_with_minmax': {'color': '#0066CC', 'marker': 'o', 'linestyle': '--'},
-        # 蓝色，虚线，圆圈标记（会显示为keeps_lane_speed_limit）
-        'keeps_fov_speed_limit': {'color': '#00CCCC', 'marker': None, 'linestyle': '--'},  # 青色，虚线，无标记
-        'keeps_brake_speed_limit': {'color': '#CC00CC', 'marker': None, 'linestyle': '--'},  # 品红，虚线，无标记
+        # Blue, dashed, circle marker (displayed as keeps_lane_speed_limit)
+        'keeps_fov_speed_limit': {'color': '#00CCCC', 'marker': None, 'linestyle': '--'},  # Cyan, dashed, no marker
+        'keeps_brake_speed_limit': {'color': '#CC00CC', 'marker': None, 'linestyle': '--'},  # Magenta, dashed, no marker
     }
 
     # Default style for unspecified predicates

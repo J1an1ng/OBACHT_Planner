@@ -87,6 +87,9 @@ def plot_velocity_profile(
     output_path: Path,
     stationary_threshold: float,
     lane_change_to_stop_interval: tuple[float, float] | None = None,
+    stationary_phase_label: str = "Stationary phase",
+    stationary_duration_label: str = "Stop",
+    stationary_label_y_fraction: float = 0.25,
 ) -> None:
     """Create and save an academic-style velocity profile line chart."""
     plt.rcParams.update(
@@ -154,14 +157,17 @@ def plot_velocity_profile(
             end_time,
             color="#BDBDBD",
             alpha=0.45,
-            label="Stationary phase",
+            label=stationary_phase_label,
         )
         ax.axvline(start_time, color="#666666", linestyle="--", linewidth=0.9)
         ax.axvline(end_time, color="#666666", linestyle="--", linewidth=0.9)
         ax.annotate(
-            f"Stop: {end_time - start_time:.1f} s",
+            f"{stationary_duration_label}: {end_time - start_time:.1f} s",
             xy=((start_time + end_time) / 2, 0),
-            xytext=((start_time + end_time) / 2, max(velocity) * 0.25),
+            xytext=(
+                (start_time + end_time) / 2,
+                max(velocity) * stationary_label_y_fraction,
+            ),
             ha="center",
             arrowprops={"arrowstyle": "->", "color": "#555555", "linewidth": 0.9},
         )
@@ -181,8 +187,6 @@ def plot_velocity_profile(
         arrowprops={"arrowstyle": "->", "color": "#555555", "linewidth": 0.9},
     )
 
-    profile_name = output_path.stem.removesuffix("_velocity_profile")
-    ax.set_title(f"Velocity Profile of the Complete {profile_name} Planning Process")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Velocity (m/s)")
     ax.set_xlim(time[0], time[-1])

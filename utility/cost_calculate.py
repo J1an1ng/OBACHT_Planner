@@ -6,12 +6,12 @@
 #
 # class TrajectoryCostTracker_1:
 #     """
-#     准确的轨迹成本追踪器
-#     只计算实际执行的轨迹点的成本，但考虑规划轨迹终点的影响
+#     Accurate trajectory-cost tracker
+#     Calculates costs only for executed trajectory points while accounting for the planned endpoint
 #     """
 #
 #     def __init__(self):
-#         # 按状态存储成本
+#         # Store costs by state
 #         self.state_costs = defaultdict(lambda: {
 #             'velocity': [],
 #             'acceleration': [],
@@ -19,62 +19,62 @@
 #             'orientation': [],
 #             'distance': [],
 #             'total': [],
-#             'executed_segments': []  # 存储实际执行的轨迹段信息
+#             'executed_segments': []  # Store information about executed trajectory segments
 #         })
 #
-#         # 存储每个执行点的详细成本
+#         # Store detailed costs for each executed point
 #         self.point_costs = {
-#             'time_step': [],  # 时间步
-#             'state': [],  # 所在状态
-#             'velocity_cost': [],  # 速度成本
-#             'acceleration_cost': [],  # 加速度成本
-#             'jerk_cost': [],  # 加加速度成本
-#             'orientation_cost': [],  # 方向成本
-#             'distance_cost': [],  # 距离成本
-#             'total_cost': [],  # 总成本
-#             # 执行点的实际状态
-#             'actual_v': [],  # 实际速度
-#             'actual_a': [],  # 实际加速度
-#             'actual_d': [],  # 实际横向位置
-#             'actual_s': [],  # 实际纵向位置
-#             'actual_theta': [],  # 实际方向角
-#             # 期望值
-#             'desired_v': [],  # 期望速度
-#             'desired_d': [],  # 期望横向位置
-#             'desired_s': [],  # 期望纵向位置（如果有）
+#             'time_step': [],  # Time step
+#             'state': [],  # Current state
+#             'velocity_cost': [],  # Velocity cost
+#             'acceleration_cost': [],  # Acceleration cost
+#             'jerk_cost': [],  # Jerk cost
+#             'orientation_cost': [],  # Orientation cost
+#             'distance_cost': [],  # Distance cost
+#             'total_cost': [],  # Total cost
+#             # Actual state at the executed point
+#             'actual_v': [],  # Actual velocity
+#             'actual_a': [],  # Actual acceleration
+#             'actual_d': [],  # Actual lateral position
+#             'actual_s': [],  # Actual longitudinal position
+#             'actual_theta': [],  # Actual orientation
+#             # Desired values
+#             'desired_v': [],  # Desired velocity
+#             'desired_d': [],  # Desired lateral position
+#             'desired_s': [],  # Desired longitudinal position, if available
 #         }
 #
-#         # 追踪规划信息
+#         # Track planning information
 #         self.planning_info = []
 #
-#         # 当前时间步
+#         # Current time step
 #         self.current_time_step = 0
 #
 #     def calculate_point_cost(self, point_idx: int, trajectory_sample, cost_function,
 #                              planning_final_state: Dict,executed_length: int) -> Dict[str, float]:
 #         """
-#         计算单个执行点的成本
+#         Calculate the cost of one executed point
 #
 #         Args:
-#             point_idx: 执行点在轨迹中的索引
-#             trajectory_sample: 完整的规划轨迹
-#             cost_function: 成本函数
-#             planning_final_state: 规划轨迹的终点状态
+#             point_idx: Index of the executed point in the trajectory
+#             trajectory_sample: Complete planned trajectory
+#             cost_function: Cost function
+#             planning_final_state: Endpoint state of the planned trajectory
 #
 #         Returns:
-#             该点的各项成本
+#             Cost components for this point
 #         """
 #         costs = {}
 #
-#         # 获取权重
+#         # Get weights
 #         w_a = getattr(cost_function, 'w_a', 5)
 #         w_jerk = getattr(cost_function, 'w_jerk', 20)
 #
-#         # 1. 加速度成本 - 只计算该点的
+#         # 1. Acceleration cost for this point only
 #         a = trajectory_sample.cartesian.a[point_idx]
 #         costs['acceleration'] = (w_a * a) ** 2
 #
-#         # 2. 加加速度成本 - 需要前一个点
+#         # 2. Jerk cost, which requires the previous point
 #         if point_idx > 0:
 #             jerk = (trajectory_sample.cartesian.a[point_idx] -
 #                     trajectory_sample.cartesian.a[point_idx - 1]) / trajectory_sample.dt
@@ -82,16 +82,16 @@
 #         else:
 #             costs['jerk'] = 0.0
 #
-#         # 3. 速度成本 - 考虑终点
+#         # 3. Velocity cost, including the endpoint
 #         if hasattr(cost_function, 'desired_speed') and cost_function.desired_speed is not None:
 #             v = trajectory_sample.cartesian.v[point_idx]
 #             v_desired = cost_function.desired_speed
 #             v_final = planning_final_state['v']
 #
-#             # 基础成本（当前点）
+#             # Base cost for the current point
 #             costs['velocity'] = (5 * (v - v_desired)) ** 2
 #
-#             # 如果这是执行段的最后一个点，需要考虑规划终点的影响
+#             # Include the planned endpoint at the end of the executed segment
 #             if point_idx == executed_length - 1:
 #                costs['velocity'] += (50 * (v_final - v_desired) ** 2)
 #
@@ -101,13 +101,13 @@
 #         else:
 #             costs['velocity'] = 0.0
 #
-#         # 4. 纵向位置成本 - 考虑终点
+#         # 4. Longitudinal-position cost, including the endpoint
 #         if hasattr(cost_function, 'desired_s') and cost_function.desired_s is not None:
 #             s = trajectory_sample.curvilinear.s[point_idx]
 #             s_desired = cost_function.desired_s
 #             s_final = planning_final_state['s']
 #
-#             # 基础成本
+#             # Base cost
 #             costs['longitudinal'] = (0.25 * (s_desired - s)) ** 2
 #
 #             if point_idx == executed_length - 1:
@@ -120,23 +120,23 @@
 #         d_desired = getattr(cost_function, 'desired_d', 0.0)
 #         d_final = planning_final_state['d']
 #
-#         # 基础成本
+#         # Base cost
 #         costs['distance'] = (0.25 * (d_desired - d)) ** 2
 #
 #         if point_idx == executed_length - 1:
 #             costs['distance'] += (20 * (d_desired - d_final) ** 2)
 #
-#         # 6. 方向成本 - 考虑终点
+#         # 6. Orientation cost, including the endpoint
 #         theta = trajectory_sample.curvilinear.theta[point_idx]
 #         theta_final = planning_final_state['theta']
 #
-#         # 基础成本
+#         # Base cost
 #         costs['orientation'] = (0.25 * np.abs(theta)) ** 2
 #
 #         if point_idx == executed_length - 1:
 #             costs['orientation'] += (5 * np.abs(theta_final)) ** 2
 #
-#         # 总成本
+#         # Total cost
 #         costs['total'] = (costs['acceleration'] + costs['velocity'] +
 #                           costs.get('longitudinal', 0.0) + costs['distance'] +
 #                           costs['orientation'] + costs['jerk'])
@@ -146,13 +146,13 @@
 #     def track_planning_step(self, planner, state_name: str, trajectory_sample=None,
 #                             replanning_frequency: int = 1):
 #         """
-#         追踪一次规划步骤的成本
+#         Track the cost of one planning step
 #
 #         Args:
-#             planner: ReactivePlanner实例
-#             state_name: 当前状态名
-#             trajectory_sample: 轨迹样本
-#             replanning_frequency: 实际执行的轨迹点数
+#             planner: ReactivePlanner instance
+#             state_name: Current state name
+#             trajectory_sample: Trajectory sample
+#             replanning_frequency: Number of trajectory points actually executed
 #         """
 #         if trajectory_sample is None and hasattr(planner, 'best_sample'):
 #             trajectory_sample = planner.best_sample
@@ -160,7 +160,7 @@
 #         if trajectory_sample is None:
 #             return
 #
-#         # 获取规划轨迹的终点状态
+#         # Get the endpoint state of the planned trajectory
 #         planning_final_state = {
 #             'v': trajectory_sample.cartesian.v[-1],
 #             'a': trajectory_sample.cartesian.a[-1],
@@ -169,7 +169,7 @@
 #             'theta': trajectory_sample.curvilinear.theta[-1]
 #         }
 #
-#         # 记录规划信息
+#         # Record planning information
 #         self.planning_info.append({
 #             'time_step': self.current_time_step,
 #             'state': state_name,
@@ -183,17 +183,17 @@
 #             'desired_s': planner._desired_lon_position
 #         })
 #
-#         # 计算实际执行的每个点的成本
+#         # Calculate the cost of each executed point
 #         executed_length = min(replanning_frequency, len(trajectory_sample.cartesian.x))
 #         segment_costs = []
 #
 #         for i in range(executed_length):
-#             # 计算该点的成本
+#             # Calculate this point's cost
 #             point_cost = self.calculate_point_cost(i, trajectory_sample,
 #                                                    planner.cost_function,
 #                                                    planning_final_state,executed_length = executed_length)
 #
-#             # 记录详细信息
+#             # Record detailed information
 #             self.point_costs['time_step'].append(self.current_time_step + i)
 #             self.point_costs['state'].append(state_name)
 #             self.point_costs['velocity_cost'].append(point_cost['velocity'])
@@ -203,14 +203,14 @@
 #             self.point_costs['distance_cost'].append(point_cost['distance'])
 #             self.point_costs['total_cost'].append(point_cost['total'])
 #
-#             # 记录实际状态
+#             # Record the actual state
 #             self.point_costs['actual_v'].append(trajectory_sample.cartesian.v[i])
 #             self.point_costs['actual_a'].append(trajectory_sample.cartesian.a[i])
 #             self.point_costs['actual_s'].append(trajectory_sample.curvilinear.s[i])
 #             self.point_costs['actual_d'].append(trajectory_sample.curvilinear.d[i])
 #             self.point_costs['actual_theta'].append(trajectory_sample.curvilinear.theta[i])
 #
-#             # 记录期望值
+#             # Record desired values
 #             self.point_costs['desired_v'].append(
 #                 planner._desired_speed if planner._desired_speed is not None else np.nan)
 #             self.point_costs['desired_d'].append(getattr(planner.cost_function, 'desired_d', 0.0))
@@ -219,13 +219,13 @@
 #
 #             segment_costs.append(point_cost)
 #
-#         # 汇总该段的成本到状态统计
+#         # Add segment costs to the per-state statistics
 #         if segment_costs:
 #             for cost_type in ['velocity', 'acceleration', 'jerk', 'orientation', 'distance', 'total']:
 #                 total_cost = sum(cost[cost_type] for cost in segment_costs)
 #                 self.state_costs[state_name][cost_type].append(total_cost)
 #
-#         # 存储执行段信息
+#         # Store executed-segment information
 #         if executed_length > 0:
 #             segment_info = {
 #                 'start_time': self.current_time_step,
@@ -235,11 +235,11 @@
 #             }
 #             self.state_costs[state_name]['executed_segments'].append(segment_info)
 #
-#         # 更新时间步
+#         # Update the time step
 #         self.current_time_step += replanning_frequency
 #
 #     def get_state_summary(self) -> pd.DataFrame:
-#         """获取每个状态的成本统计摘要"""
+#         """Return a cost summary for each state."""
 #         summary_data = []
 #
 #         for state, costs in self.state_costs.items():
@@ -257,18 +257,18 @@
 #         return pd.DataFrame(summary_data)
 #
 #     def get_point_costs_df(self) -> pd.DataFrame:
-#         """获取每个执行点的详细成本数据"""
+#         """Return detailed cost data for every executed point."""
 #         return pd.DataFrame(self.point_costs)
 #
 #     def get_planning_info_df(self) -> pd.DataFrame:
-#         """获取规划信息数据"""
+#         """Return planning information."""
 #         return pd.DataFrame(self.planning_info)
 #
 #     def get_total_costs(self) -> Dict[str, float]:
-#         """获取整条轨迹的总成本"""
+#         """Return total costs for the complete trajectory."""
 #         total_costs = defaultdict(float)
 #
-#         # 从点成本数据中汇总
+#         # Aggregate point-level cost data
 #         df = self.get_point_costs_df()
 #         if not df.empty:
 #             for cost_type in ['velocity', 'acceleration', 'jerk', 'orientation', 'distance']:
@@ -281,56 +281,56 @@
 #
 #
 #     def generate_report(self) -> str:
-#         """生成成本分析报告"""
+#         """Generate the cost-analysis report."""
 #         report = []
 #         report.append("=" * 60)
-#         report.append("轨迹成本分析报告")
+#         report.append("Trajectory Cost Analysis Report")
 #         report.append("=" * 60)
 #
-#         # 1. 总体统计
+#         # 1. Overall statistics
 #         total_costs = self.get_total_costs()
-#         report.append("\n1. 总体成本统计:")
-#         report.append(f"   总执行点数: {total_costs.get('total_points', 0)}")
+#         report.append("\n1. Overall Cost Statistics:")
+#         report.append(f"   Total executed points: {total_costs.get('total_points', 0)}")
 #         for cost_type in ['velocity', 'acceleration', 'jerk', 'orientation', 'distance', 'total']:
 #             if cost_type in total_costs:
 #                 report.append(f"   {cost_type:15s}: {total_costs[cost_type]:10.2f}")
 #
-#         # 2. 各状态成本统计
+#         # 2. Per-state cost statistics
 #         state_summary = self.get_state_summary()
 #         if not state_summary.empty:
-#             report.append("\n2. 各状态成本统计:")
+#             report.append("\n2. Per-State Cost Statistics:")
 #             report.append(state_summary.to_string())
 #
-#         # 3. 规划信息统计
+#         # 3. Planning statistics
 #         planning_df = self.get_planning_info_df()
 #         if not planning_df.empty:
-#             report.append("\n3. 规划统计:")
-#             report.append(f"   总规划次数: {len(planning_df)}")
-#             report.append(f"   平均规划长度: {planning_df['planned_length'].mean():.1f}")
-#             report.append(f"   平均执行长度: {planning_df['executed_length'].mean():.1f}")
+#             report.append("\n3. Planning Statistics:")
+#             report.append(f"   Total planning calls: {len(planning_df)}")
+#             report.append(f"   Average planned length: {planning_df['planned_length'].mean():.1f}")
+#             report.append(f"   Average executed length: {planning_df['executed_length'].mean():.1f}")
 #
 #         return "\n".join(report)
 #
 #     def save_all_data(self, prefix: str = "cost_analysis"):
-#         """保存所有分析数据"""
-#         # 1. 状态摘要
+#         """Save all analysis data."""
+#         # 1. State summary
 #         self.get_state_summary().to_csv(f"{prefix}_state_summary.csv", index=False)
 #
-#         # 2. 详细点成本
+#         # 2. Detailed point costs
 #         self.get_point_costs_df().to_csv(f"{prefix}_point_costs.csv", index=False)
 #
-#         # 3. 规划信息
+#         # 3. Planning information
 #         self.get_planning_info_df().to_csv(f"{prefix}_planning_info.csv", index=False)
 #
 #
-#         # 5. 文本报告
+#         # 5. Text report
 #         with open(f"{prefix}_report.txt", 'w') as f:
 #             f.write(self.generate_report())
 #
-#         print(f"所有分析数据已保存，前缀: {prefix}")
+#         print(f"All analysis data saved with prefix: {prefix}")
 #
 #     def reset(self):
-#         """重置追踪器"""
+#         """Reset the tracker."""
 #         self.state_costs.clear()
 #         self.point_costs = {k: [] for k in self.point_costs.keys()}
 #         self.planning_info = []

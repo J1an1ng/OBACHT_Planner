@@ -1,64 +1,64 @@
 # Academic paper optimized plotting configuration
 font:
   family: 'Times New Roman'
-  size: 10  # 论文中通常使用较小字体
+  size: 10  # Papers typically use a smaller font
 
 axes:
-  labelsize: 10   # 坐标轴标签
-  titlesize: 11   # 图表标题，略大于正文
-  linewidth: 0.8  # 更细的坐标轴线
+  labelsize: 10   # Axis labels
+  titlesize: 11   # Plot title, slightly larger than body text
+  linewidth: 0.8  # Thin axis lines
 
 ticks:
-  labelsize: 9    # 刻度标签，比坐标轴标签小
+  labelsize: 9    # Tick labels, smaller than axis labels
 
 legend:
-  fontsize: 9     # 图例字体
-  frameon: true   # 显示图例边框
-  fancybox: false # 简单边框
-  shadow: false   # 无阴影
-  framealpha: 1.0 # 完全不透明背景
-  edgecolor: 'black'  # 黑色边框
-  facecolor: 'white'  # 白色背景
+  fontsize: 9     # Legend font
+  frameon: true   # Show legend border
+  fancybox: false # Simple border
+  shadow: false   # No shadow
+  framealpha: 1.0 # Fully opaque background
+  edgecolor: 'black'  # Black border
+  facecolor: 'white'  # White background
 
 figure:
-  titlesize: 12   # 整体图标题
+  titlesize: 12   # Figure title
   dpi: 300
-  figsize: [6, 4] # 论文中常用的宽高比
+  figsize: [6, 4] # Aspect ratio commonly used in papers
 
 lines:
-  linewidth: 1.2  # 适中的线宽，确保打印清晰
-  markersize: 3   # 较小的标记点
+  linewidth: 1.2  # Moderate line width for clear printing
+  markersize: 3   # Small markers
 
 grid:
-  alpha: 0.0      # 无网格
+  alpha: 0.0      # No grid
 
 mathtext:
-  fontset: 'stix'  # 与Times New Roman匹配的数学字体
+  fontset: 'stix'  # Math font matching Times New Roman
 
 savefig:
   dpi: 300
   bbox: 'tight'
   format: 'pdf'
-  pad_inches: 0.1  # 适当的边距
+  pad_inches: 0.1  # Compact padding
 
-# 学术论文友好的颜色方案
+# Publication-friendly color palette
 academic_colors:
-  # 使用色盲友好且打印友好的颜色
-  red: '#CC0000'      # 深红色，打印效果好
-  blue: '#0066CC'     # 深蓝色
-  green: '#009900'    # 深绿色
-  orange: '#FF6600'   # 橙色
-  purple: '#6600CC'   # 紫色
-  black: '#000000'    # 黑色
-  gray: '#666666'     # 灰色
+  # Color-blind-accessible and print-friendly colors
+  red: '#CC0000'      # Dark red with good print contrast
+  blue: '#0066CC'     # Dark blue
+  green: '#009900'    # Dark green
+  orange: '#FF6600'   # Orange
+  purple: '#6600CC'   # Purple
+  black: '#000000'    # Black
+  gray: '#666666'     # Gray
 
 # Color configuration for single trajectory
 colors:
-  velocity: '#0066CC'     # 深蓝色
-  acceleration: '#FF6600' # 橙色
-  jerk: '#009900'         # 深绿色
-  orientation: '#CC0000'  # 深红色
-  steering: '#6600CC'     # 紫色
+  velocity: '#0066CC'     # Dark blue
+  acceleration: '#FF6600' # Orange
+  jerk: '#009900'         # Dark green
+  orientation: '#CC0000'  # Dark red
+  steering: '#6600CC'     # Purple
 
 # Line style configuration for single trajectory
 linestyles:
@@ -68,18 +68,18 @@ linestyles:
   orientation: '-'
   steering: '-'
 
-# Dual trajectory configuration - 学术论文优化
+# Dual-trajectory configuration optimized for publications
 dual_trajectories:
   trajectory1:
     colors:
-      velocity: '#CC0000'     # 深红色 - 更适合论文打印
+      velocity: '#CC0000'     # Dark red for good print contrast
       acceleration: '#CC0000'
       jerk: '#CC0000'
       orientation: '#CC0000'
       steering: '#CC0000'
       position: '#CC0000'
     linestyles:
-      velocity: '-'           # 实线
+      velocity: '-'           # Solid line
       acceleration: '-'
       jerk: '-'
       orientation: '-'
@@ -91,21 +91,21 @@ dual_trajectories:
       jerk: 'None'
       orientation: 'None'
       steering: 'None'
-      position: 'o'           # 圆形标记
-    alpha: 1.0              # 完全不透明，确保打印清晰
+      position: 'o'           # Circle marker
+    alpha: 1.0              # Fully opaque for clear printing
     linewidth: 1.2
     markersize: 3
 
   trajectory2:
     colors:
-      velocity: '#0066CC'     # 深蓝色 - 与红色对比度好
+      velocity: '#0066CC'     # Dark blue with good contrast against red
       acceleration: '#0066CC'
       jerk: '#0066CC'
       orientation: '#0066CC'
       steering: '#0066CC'
       position: '#0066CC'
     linestyles:
-      velocity: '--'          # 虚线，增加区分度
+      velocity: '--'          # Dashed line for stronger differentiation
       acceleration: '--'
       jerk: '--'
       orientation: '--'
@@ -117,12 +117,12 @@ dual_trajectories:
       jerk: 'None'
       orientation: 'None'
       steering: 'None'
-      position: 's'           # 方形标记
+      position: 's'           # Square marker
     alpha: 1.0
     linewidth: 1.2
     markersize: 3
 
-# 学术论文标签
+# Publication labels
 dual_labels:
   default: ['Method A', 'Method B']
   academic_examples:
@@ -132,12 +132,12 @@ dual_labels:
     - ['With Constraints', 'Without Constraints']
     - ['Reactive Planning', 'Static Planning']
 
-# 论文中常用的图表标题格式
+# Plot-title format commonly used in papers
 plot_titles:
   academic_style: true
-  title_format: "{variable} Comparison"  # 简洁的标题格式
+  title_format: "{variable} Comparison"  # Concise title format
 
-# 坐标轴标签的学术格式
+# Publication-style axis labels
 axis_labels:
   time_step: "Time Step"
   velocity: "Velocity (m/s)"

@@ -88,33 +88,33 @@ ego_obstacle.obstacle_shape.length = 12.95
 ego_obstacle.obstacle_shape.width = 2.55
 ego_obstacle._obstacle_type = ObstacleType.BUS
 
-# TUM Orange色调的BUS参数 (ego vehicle)
+# Bus parameters in TUM orange (ego vehicle)
 ego_params = DynamicObstacleParams()
 ego_params.draw_icon = True
-ego_params.use_type_color = False  # 不使用默认类型颜色
+ego_params.use_type_color = False  # Do not use the default type color
 ego_params.vehicle_shape.occupancy.draw_occupancies = True
 ego_params.vehicle_shape.occupancy.shape.facecolor = "#E37222"  # TUM Orange
-ego_params.vehicle_shape.occupancy.shape.edgecolor = "#C55A11"  # 深一些的橙色边框
+ego_params.vehicle_shape.occupancy.shape.edgecolor = "#C55A11"  # Darker orange outline
 ego_params.vehicle_shape.direction.zorder = 55
 ego_params.draw_shape = True
 ego_params.time_begin = 0
 # ego_params.time_end = 0
 
-# 黄色CAR参数
+# Car parameters
 car_params = DynamicObstacleParams()
-car_params.use_type_color = False  # 不使用默认类型颜色
+car_params.use_type_color = False  # Do not use the default type color
 car_params.time_begin = 0
 # car_params.time_end = 0
 car_params.vehicle_shape.occupancy.draw_occupancies = True
-car_params.vehicle_shape.occupancy.shape.facecolor = "#43A047"  # 亮一点的绿色 (Green-600)
-car_params.vehicle_shape.occupancy.shape.edgecolor  = "#000000"  # 黑色边框
+car_params.vehicle_shape.occupancy.shape.facecolor = "#43A047"  # Brighter green (Green-600)
+car_params.vehicle_shape.occupancy.shape.edgecolor  = "#000000"  # Black outline
 car_params.draw_icon = True
 car_params.vehicle_shape.occupancy.shape.zorder = 100
 car_params.vehicle_shape.occupancy.shape.opacity = 1
 
-# 默认颜色BICYCLE参数
+# Bicycle parameters using the default color
 bicycle_params = DynamicObstacleParams()
-bicycle_params.use_type_color = True  # 使用默认类型颜色
+bicycle_params.use_type_color = True  # Use the default type color
 bicycle_params.time_begin = 0
 # bicycle_params.time_end = 0
 bicycle_params.vehicle_shape.occupancy.draw_occupancies = True
@@ -127,36 +127,36 @@ bicycle_params.vehicle_shape.occupancy.shape.opacity = 1
 
 # 7. Set up renderer params
 draw_params = MPDrawParams()
-draw_params.dynamic_obstacle.use_type_color = False  # 其他障碍物使用默认颜色
+draw_params.dynamic_obstacle.use_type_color = False  # Use the configured color for other obstacles
 draw_params.time_begin = 0
 
 draw_params.draw_icon = True
 draw_params.traffic_sign.draw_traffic_signs = True
 
-# set ego trajectory occupancy shape params (TUM Orange轨迹)
+# Set ego-trajectory occupancy shape parameters (TUM orange trajectory)
 occ_params = OccupancyParams()
 occ_params.shape.facecolor = "#E37222"  # TUM Orange
-occ_params.shape.edgecolor = "#C55A11"  # 深橙色边框
+occ_params.shape.edgecolor = "#C55A11"  # Dark-orange outline
 occ_params.shape.opacity = 0.2
 occ_params.shape.zorder = 20
 
 
 
 
-# 设置高分辨率参数
+# Configure high-resolution rendering
 plt.figure(figsize=(16, 9))
 
 rnd = MPRenderer(draw_params)
 # reactive_scenario.draw(rnd)
 
-# 绘制自行车道
+# Draw bicycle lanes
 bicycle_lane_ids = [310,313,303,314,315]
 # bicycle_lane_ids = [3]
 rnd.draw_params.shape.facecolor = "#98c6ea"
 for id in bicycle_lane_ids:
     scenario.lanelet_network.find_lanelet_by_id(id).polygon.draw(rnd)
 
-# 绘制ego vehicle轨迹和车辆 (TUM Orange BUS)
+# Draw the ego-vehicle trajectory and vehicle (TUM orange bus)
 if ego_obstacle is not None:
     # draw occupancies of ego vehicle trajectory
     [
@@ -166,23 +166,23 @@ if ego_obstacle is not None:
     # visualize ego vehicle at specified time step
     ego_obstacle.draw(rnd, draw_params=ego_params)
 
-# 设置和绘制其他车辆
-# CAR vehicles (红色)
+# Configure and draw other vehicles
+# Cars (red)
 reactive_scenario.obstacle_by_id(3002)._obstacle_type = ObstacleType.CAR
 reactive_scenario.obstacle_by_id(3001)._obstacle_type = ObstacleType.CAR
 reactive_scenario.obstacle_by_id(3002).draw(rnd, car_params)
 reactive_scenario.obstacle_by_id(3001).draw(rnd, car_params)
 
-# # BICYCLE vehicle (默认颜色)
+# # Bicycle (default color)
 reactive_scenario.obstacle_by_id(5001)._obstacle_type = ObstacleType.BICYCLE
 reactive_scenario.obstacle_by_id(5001).draw(rnd, bicycle_params)
 
-# 添加公交车站标志
+# Add the bus-stop sign
 bus_stop_sign_element = TrafficSignElement(TrafficSignIDGermany.BUS_STOP)
 bus_stop_sign = TrafficSign(400, [bus_stop_sign_element], {7}, np.array([6, -4.5]))
 bus_stop_sign.draw(rnd)
 
-# 再次绘制ego vehicle确保在最上层
+# Draw the ego vehicle again to keep it on top
 ego_obstacle.draw(rnd, ego_params)
 
 planning_problem.draw(rnd)

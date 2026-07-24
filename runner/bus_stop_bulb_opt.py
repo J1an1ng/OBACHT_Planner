@@ -23,7 +23,7 @@ Strategy
 
 Usage
 -----
-    python utility/bus_stop_bulb_opt.py
+    python runner/bus_stop_bulb_opt.py
 """
 
 import copy
@@ -926,6 +926,8 @@ def _generate_velocity_profile(
             output_path,
             stationary_threshold,
             lane_change_to_stop_interval=_lane_change_to_stop_interval(),
+            stationary_phase_label="Boarding phase",
+            stationary_duration_label="Boarding",
         )
         print(f"[bus_stop_bulb_opt] Velocity profile saved to: {output_path}")
     except Exception as exc:
@@ -1333,6 +1335,18 @@ def visualise(cfg: dict, bus_stop: str):
         print("[debug] No planning records captured – nothing to visualise.")
         return
 
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.size": 11,
+            "axes.labelsize": 12,
+            "axes.titlesize": 13,
+            "legend.fontsize": 10,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+        }
+    )
+
     # find the failing record (first with error set)
     error_idx = next((i for i, r in enumerate(_plan_records) if r["error"] is not None), None)
     first_fallback_idx = next((i for i, r in enumerate(_plan_records) if r.get("planner_returned_none")), None)
@@ -1340,24 +1354,7 @@ def visualise(cfg: dict, bus_stop: str):
     scenario, planning_problem_set = load_cr_scenario(bus_stop)
     planning_problem = next(iter(planning_problem_set.planning_problem_dict.values()))
 
-    fig, ax_map = plt.subplots(figsize=(13.5, 2.85))
-
-    total = len(_plan_records)
-    err_str = f"step {error_idx}" if error_idx is not None else "no domain error"
-    fb_str = f"step {first_fallback_idx}" if first_fallback_idx is not None else "none"
-    title_times = []
-    for rec in _plan_records:
-        time_ms = _planning_time_ms(rec)
-        if time_ms is not None:
-            title_times.append(time_ms)
-    avg_plan_str = _format_time_ms(sum(title_times) / len(title_times) if title_times else None)
-    fig.suptitle(
-        f"Projection Domain Debug  |  Scenario: {bus_stop}  |  "
-        f"CommonRoad RP only  |  Steps: {total}  |  Avg plan: {avg_plan_str}  |  "
-        f"Error: {err_str}  |  First fallback: {fb_str}",
-        fontsize=10,
-        y=0.985,
-    )
+    fig, ax_map = plt.subplots(figsize=(13.5, 2.35))
 
     # ── draw lanelets ─────────────────────────────────────────────────────────
     for ll in scenario.lanelet_network.lanelets:
@@ -1368,7 +1365,7 @@ def visualise(cfg: dict, bus_stop: str):
         ax_map.plot(rv[:, 0], rv[:, 1], color="#777777", lw=0.45, zorder=1)
         cx = ll.center_vertices[len(ll.center_vertices) // 2]
         ax_map.text(cx[0], cx[1], str(ll.lanelet_id),
-                    fontsize=6, color="#777", ha="center", va="center", zorder=4)
+                    fontsize=10, color="#777", ha="center", va="center", zorder=4)
 
     goal_shape = planning_problem.goal.state_list[0].position
     goal_center = goal_shape.center
@@ -1451,10 +1448,10 @@ def visualise(cfg: dict, bus_stop: str):
             ax_map.scatter([fx], [fy], color="#FFC107", edgecolors="#5D4500",
                            linewidths=0.8, s=145, marker="D", zorder=8)
             ax_map.annotate(
-                f"First fallback\nstep {first_fallback_idx} [{rec_fb['sm_state']}]\n"
+                f"Fallback\nstep {first_fallback_idx} [{rec_fb['sm_state']}]\n"
                 f"{rec_fb.get('fallback_reason_hint') or ''}",
                 xy=(fx, fy), xytext=(fx + 8, fy + 6),
-                fontsize=8, color="#5D4500", zorder=10,
+                fontsize=11, color="#5D4500", zorder=10,
                 arrowprops=dict(arrowstyle="->", color="#5D4500", lw=1.0),
                 bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="#FFC107", alpha=0.95),
             )
@@ -1468,7 +1465,7 @@ def visualise(cfg: dict, bus_stop: str):
             "end",
             xy=(end[0], end[1]),
             xytext=(end[0] + 5, end[1] + 2),
-            fontsize=8,
+            fontsize=11,
             color="#0D47A1",
             arrowprops=dict(arrowstyle="->", color="#0D47A1", lw=0.9),
             bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="#0D47A1", alpha=0.9),
@@ -1486,7 +1483,7 @@ def visualise(cfg: dict, bus_stop: str):
             f"pos=({ex:.2f}, {ey:.2f})\n"
             f"v={rec['velocity']:.2f} m/s",
             xy=(ex, ey), xytext=(ex - 30, ey + 8),
-            fontsize=8, color="red", zorder=10,
+            fontsize=11, color="red", zorder=10,
             arrowprops=dict(arrowstyle="->", color="red", lw=1.2),
             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="red", alpha=0.95),
         )
@@ -1505,7 +1502,7 @@ def visualise(cfg: dict, bus_stop: str):
                     f"domain end  s={dom_len:.1f} m",
                     xy=(ref[-1, 0], ref[-1, 1]),
                     xytext=(ref[-1, 0] - 15, ref[-1, 1] - 10),
-                    fontsize=8, color="darkred",
+                    fontsize=11, color="darkred",
                     arrowprops=dict(arrowstyle="->", color="darkred", lw=0.9),
                     bbox=dict(boxstyle="round,pad=0.2", fc="lightyellow", ec="darkred", alpha=0.95),
                 )
@@ -1528,7 +1525,7 @@ def visualise(cfg: dict, bus_stop: str):
                             f"last valid point\n(s={s_clamped:.1f} m)",
                             xy=(pt[0], pt[1]),
                             xytext=(pt[0] + 1, pt[1] - 2),
-                            fontsize=8, color="darkorange",
+                            fontsize=11, color="darkorange",
                         )
                 except Exception:
                     pass
@@ -1559,7 +1556,7 @@ def visualise(cfg: dict, bus_stop: str):
     if first_fallback_idx is not None:
         legend_handles.append(
             Line2D([0], [0], marker="D", color="w", markerfacecolor="#FFC107",
-                   markeredgecolor="#5D4500", markersize=8, label="first fallback")
+                   markeredgecolor="#5D4500", markersize=8, label="fallback")
         )
     legend_handles.append(mpatches.Patch(facecolor="#00A676", edgecolor="#007A5A", alpha=0.25, label="goal"))
 
@@ -1575,13 +1572,13 @@ def visualise(cfg: dict, bus_stop: str):
     ax_map.set_ylim(min_xy[1] - pad_y, max_xy[1] + pad_y)
     ax_map.set_xlabel("x [m]")
     ax_map.set_ylabel("y [m]")
-    # Place legend just outside the axes, keeping the map clear for poster use.
+    # Place the legend above the axes so it does not collide with the x label.
     ax_map.legend(
         handles=legend_handles,
-        loc="upper center",
-        bbox_to_anchor=(0.5, -0.30),
+        loc="lower center",
+        bbox_to_anchor=(0.5, 1.03),
         ncol=min(len(legend_handles), 7),
-        fontsize=7,
+        fontsize=10,
         framealpha=0.9,
         edgecolor="#aaaaaa",
         borderpad=0.25,
@@ -1590,7 +1587,7 @@ def visualise(cfg: dict, bus_stop: str):
     )
     ax_map.grid(True, lw=0.4, alpha=0.5)
 
-    plt.subplots_adjust(left=0.045, right=0.995, bottom=0.43, top=0.80)
+    plt.subplots_adjust(left=0.045, right=0.995, bottom=0.16, top=0.86)
     out = path_root / "experiments" / "output_result" / "result_bulb" / "bus_stop_bulb_opt.png"
     out.parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(str(out), dpi=150, bbox_inches="tight")

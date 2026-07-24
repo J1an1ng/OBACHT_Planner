@@ -208,7 +208,7 @@ class Lane:
         params = CLCSParams(
             default_proj_domain_limit=20.0,
             eps=0.1,
-            eps2=0.01,  # 调整为更合理的值
+            eps2=0.01,  # Adjusted to a more appropriate value
         )
         # curvilinear_cosy = CurvilinearCoordinateSystem(new_ref_path, 20, 0.1, 5.0)
         curvilinear_cosy = CurvilinearCoordinateSystem(new_ref_path, params=params)

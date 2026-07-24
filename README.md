@@ -1,85 +1,113 @@
-# Developent of a hybrid control system
+# OBACHT Planner
 
+OBACHT Planner is a hybrid motion-planning and control system for autonomous
+public-transport vehicles. The current runners combine a CommonRoad reactive
+planner, a state-machine controller, SUMO traffic simulation, and Spatiotemporal
+Logic (STL) verification. Legacy post-optimization modules remain in the
+repository, but post-optimization is disabled in the current runner workflow.
 
+The repository includes two complete bus-stop scenarios:
 
-This repository implements a hybrid control system for autonomous public transport (PT) vehicles. The system features:
-* Reactive planner with post-optimization for motion planning
-* State machine implementation modeling all PT operational states
-* SUMO-based simulation for traffic scenarios
-* STL (Spatiotemporal Logic) verification ensuring traffic rule compliance and safety
+- `bus_stop_bay`: a recessed bus bay
+- `bus_stop_bulb`: a curb-extension bus bulb
 
+## Project structure
 
+| Path | Purpose |
+| --- | --- |
+| `runner/` | Main entry points for the bus-bay and bus-bulb simulations |
+| `configurations/` | Global scenario selection and scenario-specific planner states |
+| `scenarios/` | CommonRoad and SUMO scenario files |
+| `post_optimization_planner/` | Active state machine and legacy post-optimization logic |
+| `source/` | Reactive planner, simulation, and STL-monitoring modules |
+| `experiments/` | STL notebooks and generated experiment output |
+| `utility/` | Plotting, conversion, comparison, and analysis scripts |
 
+## Installation
 
-[//]: # (### Getting Started)
+The supported environment uses Python 3.11. Create it from the repository root:
 
-[//]: # (These instructions should help you to install the trajectory planner and use it for development and testing purposes.)
+```bash
+conda env create -f environment.yaml
+conda activate obacht-planner
+```
 
-[//]: # ()
-[//]: # (To install the package from PyPi, please run:)
+The environment installs the CommonRoad and SUMO packages used by the
+simulation, as well as the notebook and development tools. Confirm that SUMO is
+available before starting a run:
 
-[//]: # (```shell)
+```bash
+sumo --version
+```
 
-[//]: # (pip install commonroad-reactive-planner)
+Optional: enable the repository's formatting hooks:
 
-[//]: # (```)
+```bash
+pre-commit install
+```
 
-### Requirements
-The required python dependencies are listed in `environment.yaml`.
+## Run the simulations
 
-For the python installation, we suggest the usage of [Anaconda](http://www.anaconda.com/download/#download).
+Run commands from the repository root so that project-relative imports and
+configuration paths resolve consistently.
 
-For the development IDE we suggest [PyCharm](http://www.jetbrains.com/pycharm/)
+### Bus-stop bay
 
+Set the scenario in `configurations/scenario.yaml`:
 
-### Installation from Source
-1. Clone this repository :
-    * `git clone --branch Master_thesis --single-branch git@gitlab.lrz.de:00000000014AF996/obacht.git
-`
+```yaml
+scenario:
+  type: bus_stop_bay
+```
 
+Then run:
 
-2. create a conda environment and install the package :
-    * `conda env create -f environment.yaml`
+```bash
+python runner/bus_stop_bay_opt.py
+```
 
+### Bus-stop bulb
 
+Run:
 
-### How to run Simulation
-Before running the simulation, select the scenario in `configurations/` folder in `scenario.yaml`:
+```bash
+python runner/bus_stop_bulb_opt.py
+```
 
-`cd configurations`
+The bulb runner uses `bus_stop_bulb` for its run without permanently changing
+`configurations/scenario.yaml`.
 
-The example script in `post_optimization_planner/` folder shows how to run the planner on an exemplary CommonRoad scenario with the SUMO simulation: 
+Both runners disable planner multiprocessing so projection-domain errors remain
+visible in the main process. They execute the SUMO simulation, export the driven
+trajectory, generate a velocity profile and GIF, print diagnostic summaries,
+and save a debug visualization.
 
-`cd ..`
+Generated files are written to:
 
-`cd post_optimization_planner`
+- `experiments/output_result/result_bay/`
+- `experiments/output_result/result_bulb/`
 
-`python simulation_with_planner.py`
+These output directories are intentionally excluded from Git.
 
-### See real‑time SUMO simulation
+## STL verification
 
-Enter `utility/` folder and run  
-`solution_to_GIF.py`.
+Start JupyterLab and open the RB1/RB2 experiment notebook:
 
+```bash
+jupyter lab experiments/scenario_with_RB1_RB2.ipynb
+```
 
-Output file in  `experiments/output_result/` folder (an example):
+The notebook evaluates trajectories against the STL specifications implemented
+in `source/crmonitor/`.
 
-`sumo_result_bus_stop_bulb.gif`
+## Additional utilities
 
+For example, regenerate a velocity profile from an exported trajectory:
 
-<img alt="sumo_reuslt" src="experiments/output_result/sumo_result_bus_stop_bulb.gif" width="600"/>
+```bash
+python utility/plot_velocity_profile.py \
+  --input experiments/output_result/result_bay/bus_stop_bay_opt_trajectory.csv \
+  --output experiments/output_result/result_bay/bus_stop_bay_opt_velocity_profile.png
+```
 
-### How to run STL verification
-
-
-execution of the `scenario_with_RB1_RB2.ipynb` Jupyter notebook in the `experiments/` folder enables formal verification of trajectory generated by SUMO simulations against the Spatiotemporal Logic (STL) specifications defined in RB1 and RB2.
-
-
-[//]: # (## Literature)
-
-[//]: # ([1] Werling M., et al. *Optimal trajectory generation for dynamic street scenarios in a frenet frame*. In: IEEE International Conference on Robotics and Automation, Anchorage, Alaska, 987–993.)
-
-[//]: # ()
-[//]: # ([2] Werling M., et al. *Optimal trajectories for time-critical street scenarios using discretized terminal manifolds* In:)
-
-[//]: # (The International Journal of Robotics Research, 2012)
+Run `python utility/plot_velocity_profile.py --help` for all available options.

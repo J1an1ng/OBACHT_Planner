@@ -471,7 +471,7 @@ def plot_state(trajectory, filename: str):
 #
 #     # Calculate acceleration from velocity differences
 #     accelerations1 = np.zeros(len(velocities1))
-#     accelerations1[1:] = np.diff(velocities1) / dt  # 修正：通过速度差值计算加速度
+#     accelerations1[1:] = np.diff(velocities1) / dt  # Derive acceleration from velocity differences
 #
 #     jerks1 = np.zeros(len(velocities1))
 #     jerks1[1:] = np.diff(accelerations1) / dt
@@ -487,7 +487,7 @@ def plot_state(trajectory, filename: str):
 #
 #     # Calculate acceleration from velocity differences
 #     accelerations2 = np.zeros(len(velocities2))
-#     accelerations2[1:] = np.diff(velocities2) / dt  # 修正：通过速度差值计算加速度
+#     accelerations2[1:] = np.diff(velocities2) / dt  # Derive acceleration from velocity differences
 #
 #     jerks2 = np.zeros(len(velocities2))
 #     jerks2[1:] = np.diff(accelerations2) / dt
@@ -595,7 +595,7 @@ def plot_state(trajectory, filename: str):
 #         # Add legend
 #         ax.legend()
 #
-#         # 强制关闭网格（无论配置文件如何设置）
+#         # Force the grid off regardless of the configuration
 #         ax.grid(False)
 #
 #         # Save the figure
@@ -605,10 +605,10 @@ def plot_state(trajectory, filename: str):
 #         plt.close()
 #
 #     print(f"Config-based dual trajectory comparison plots saved to: {save_dir}")
-# visualization.py 文件的修改部分
+# Modified section of visualization.py
 
 
-# visualization.py 文件的修改部分
+# Modified section of visualization.py
 
 def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
                            show_state_markers=True, state_transitions=None):
@@ -639,14 +639,14 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
     if labels is None:
         labels = config.get('dual_labels', {}).get('default', ['Trajectory 1', 'Trajectory 2'])
 
-    # 定义默认的状态转换点
+    # Define default state-transition points
     if state_transitions is None:
         state_transitions = {
             'post_opt': {
-                50: ('H→A', '#FF9800'),  # Heading to Arriving (橙色)
-                300: ('A→B', '#9E9E9E'),  # Arriving to Boarding (灰色)
-                315: ('B→D', '#2196F3'),  # Boarding to Departure (蓝色)
-                450: ('D→H', '#4CAF50')  # Departure to Heading (绿色)
+                50: ('H→A', '#FF9800'),  # Heading to Arriving (orange)
+                300: ('A→B', '#9E9E9E'),  # Arriving to Boarding (gray)
+                315: ('B→D', '#2196F3'),  # Boarding to Departure (blue)
+                450: ('D→H', '#4CAF50')  # Departure to Heading (green)
             },
             'original': {
                 50: ('H→A', '#FF9800'),
@@ -703,18 +703,18 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
             'filename': f"{base}_position_trajectory_comparison.{config['savefig']['format']}",
             'variable_key': 'position',
             'plot_type': 'scatter',
-            'show_markers': False  # 位置图不需要状态标记
+            'show_markers': False  # No state markers on the position plot
         },
         {
             'data': [(k1, velocities1), (k2, velocities2)],
-            'data_raw': [velocities1, velocities2],  # 用于标记点
+            'data_raw': [velocities1, velocities2],  # Used to position markers
             'title': 'Velocity Comparison Over Time Steps',
             'xlabel': 'Time Step',
             'ylabel': 'Velocity (m/s)',
             'filename': f"{base}_velocity_comparison.{config['savefig']['format']}",
             'variable_key': 'velocity',
             'plot_type': 'line',
-            'show_markers': True  # 速度图显示状态标记
+            'show_markers': True  # Show state markers on the velocity plot
         },
         {
             'data': [(k1, accelerations1), (k2, accelerations2)],
@@ -725,7 +725,7 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
             'filename': f"{base}_acceleration_comparison.{config['savefig']['format']}",
             'variable_key': 'acceleration',
             'plot_type': 'line',
-            'show_markers': True  # 加速度图显示状态标记
+            'show_markers': True  # Show state markers on the acceleration plot
         },
         {
             'data': [(k1, jerks1), (k2, jerks2)],
@@ -736,7 +736,7 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
             'filename': f"{base}_jerk_comparison.{config['savefig']['format']}",
             'variable_key': 'jerk',
             'plot_type': 'line',
-            'show_markers': True  # Jerk图显示状态标记
+            'show_markers': True  # Show state markers on the jerk plot
         },
         {
             'data': [(k1, orientations1), (k2, orientations2)],
@@ -747,7 +747,7 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
             'filename': f"{base}_orientation_comparison.{config['savefig']['format']}",
             'variable_key': 'orientation',
             'plot_type': 'line',
-            'show_markers': True  # 方向角图不显示状态标记
+            'show_markers': True  # Show state markers on the orientation plot
         },
         {
             'data': [(k1, deltas1), (k2, deltas2)],
@@ -758,7 +758,7 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
             'filename': f"{base}_steering_comparison.{config['savefig']['format']}",
             'variable_key': 'steering',
             'plot_type': 'line',
-            'show_markers': False  # 转向角图不显示状态标记
+            'show_markers': False  # No state markers on the steering-angle plot
         }
     ]
 
@@ -799,24 +799,24 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
                         linewidth=linewidth, alpha=alpha, marker=marker,
                         markersize=markersize, label=label, zorder=1)
 
-        # 添加状态转换标记 - 两个planner都用圆形
+        # Add circular state-transition markers for both planners
         if show_state_markers and plot_config.get('show_markers', False) and 'data_raw' in plot_config:
-            # 为Post-optimization添加标记 (trajectory1) - 圆形
+            # Add circular post-optimization markers (trajectory1)
             for step, (trans_name, color) in state_transitions['post_opt'].items():
-                # 调整索引（因为时间步从1开始，但数组索引从0开始）
+                # Convert one-based time steps to zero-based array indices
                 idx = step - 1 if step > 0 else step
                 if idx < len(plot_config['data_raw'][0]):
                     ax.scatter(step, plot_config['data_raw'][0][idx],
-                               color=color, s=120, marker='o',  # 圆形
+                               color=color, s=120, marker='o',  # Circle
                                edgecolors='black', linewidth=1.5,
                                zorder=3, alpha=0.9)
 
-            # 为Original planner添加标记 (trajectory2) - 也用圆形
+            # Add circular original-planner markers (trajectory2)
             for step, (trans_name, color) in state_transitions['original'].items():
                 idx = step - 1 if step > 0 else step
                 if idx < len(plot_config['data_raw'][1]):
                     ax.scatter(step, plot_config['data_raw'][1][idx],
-                               color=color, s=120, marker='o',  # 改为圆形
+                               color=color, s=120, marker='o',  # Circle
                                edgecolors='black', linewidth=1.5,
                                zorder=3, alpha=0.9)
 
@@ -828,18 +828,18 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
         # Add legend
         legend1 = ax.legend(loc='upper right')
         # legend1 = ax.legend(
-        #     loc='upper center',  # 上方居中（配合bbox_to_anchor控制具体位置）
-        #     bbox_to_anchor=(0.5, -0.15),  # 0.5表示水平居中，-0.15表示向下移（可调）
-        #     ncol=2  # 两列排版（可根据需要调整）
+        #     loc='upper center',  # Center above using bbox_to_anchor for exact placement
+        #     bbox_to_anchor=(0.5, -0.15),  # Center horizontally and shift downward (adjustable)
+        #     ncol=2  # Two-column layout (adjust as needed)
         # )
 
-        # 如果显示了状态标记，添加状态转换图例
+        # Add a state-transition legend when state markers are visible
         if show_state_markers and plot_config.get('show_markers', False):
-            # 创建状态转换图例元素
+            # Create state-transition legend entries
             from matplotlib.lines import Line2D
             legend_elements = []
 
-            # 添加转换类型的颜色说明
+            # Add color keys for transition types
             unique_transitions = {}
             for _, (trans_name, color) in state_transitions['post_opt'].items():
                 if trans_name not in unique_transitions:
@@ -853,18 +853,18 @@ def plot_state_dual_config(trajectory1, trajectory2, filename: str, labels=None,
                            label=trans_name)
                 )
 
-            # 添加说明：标记点在曲线上表示状态转换
+            # Explain that markers on the curves indicate state transitions
             legend_elements.append(
                 Line2D([0], [0], marker='', color='none'
                       )
             )
 
-            # 添加第二个图例（状态转换）
+            # Add the second legend for state transitions
             legend2 = ax.legend(handles=legend_elements, loc='lower right',
                                 title='State Transitions', fontsize=8)
-            ax.add_artist(legend1)  # 保留第一个图例
+            ax.add_artist(legend1)  # Preserve the first legend
 
-        # 强制关闭网格
+        # Force the grid off
         ax.grid(False)
 
         # Save the figure

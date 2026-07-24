@@ -18,7 +18,7 @@ from utility.visualization_2 import plot_state_dual_config
 path_notebook = os.getcwd()
 sys.path.append(os.path.join(path_notebook, "../"))
 
-# Define project paths - 使用字符串路径
+# Define project paths using strings
 path_root = str(Path(__file__).resolve().parent.parent)
 config_path = os.path.join(path_root, "configurations", "scenario.yaml")
 scenarios_root = os.path.join(path_root, "scenarios")
@@ -85,7 +85,7 @@ if len(solution_False.planning_problem_solutions) == 0:
     print("Error: No planning problem solutions found in False solution")
     sys.exit(1)
 
-# 获取轨迹
+# Load trajectories
 trajectory_True = solution_True.planning_problem_solutions[0].trajectory
 trajectory_False = solution_False.planning_problem_solutions[0].trajectory
 

@@ -1,26 +1,40 @@
+# Editors and operating systems
 .idea/
-.idea/**
-
-build/
-*.egg-info
-install/
-log/
-
+.vscode/
 *.iml
 .DS_Store
-.ipynb_checkpoints
-.pyc
-__pycache__
 
-plots/
-unit_tests/img/
-evals/
-doc/build
-output/
-dist/
+# Python environments and caches
+.venv/
 venv/
-evaluation/logs
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.ipynb_checkpoints/
+
+# Build and packaging output
+build/
+dist/
+install/
+*.egg-info/
+
+# Generated logs, plots, and experiment output
+log/
+logs/
+*.log
+plots/
+output/
+evals/
+evaluation/logs/
+unit_tests/img/
+doc/build/
 nohup.out
 experiments/output_result/
+
+# Local or generated source trees
 external/
 source/commonroad_rp_backup_before_replace/

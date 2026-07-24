@@ -190,7 +190,7 @@ def plot_rule_visualization(
     #     },
     # }
     general_draw_params = {
-        "time_begin": time_step,  # DynamicObstacleParams 继承自 BaseParam
+        "time_begin": time_step,  # DynamicObstacleParams inherits from BaseParam
         "show_label": True,
         "vehicle_shape": {
             "occupancy": {
@@ -323,10 +323,10 @@ def plot_rule_visualization(
             local_dict = vehicle2draw_params.get(i, {})
             merged_dict = merge_dicts_recursively(general_draw_params, local_dict)
 
-            # 3-2 转成 DynamicObstacleParams（带所有嵌套 dataclass）
+            # 3-2 Convert to DynamicObstacleParams, including all nested dataclasses
             dyn_draw_params = _dict_to_params(merged_dict, DynamicObstacleParams)
 
-            # 3-3 调 renderer
+            # 3-3 Invoke the renderer
             scenario.obstacle_by_id(i).draw(renderer, draw_params=dyn_draw_params)
             # old
             # draw_params = vehicle2draw_params.get(i, {})
@@ -348,7 +348,7 @@ def plot_rule_visualization(
     #         general_draw_params, EGO_VEHICLE_DRAW_PARAMS
     #     ),
     # )
-    # 4) 自车同理
+    # 4) Apply the same process to the ego vehicle
     ego_dict = merge_dicts_recursively(general_draw_params, EGO_VEHICLE_DRAW_PARAMS)
     ego_draw_params = _dict_to_params(ego_dict, DynamicObstacleParams)
     scenario.obstacle_by_id(ego_vehicle_id).draw(renderer, draw_params=ego_draw_params)
