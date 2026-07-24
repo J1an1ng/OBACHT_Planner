@@ -1137,6 +1137,8 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
                 → BEFORE_STOPPING_ALIGN → BEFORE_STOPPING_FINAL → STOPPING
     """
 
+    MISSION_COMPLETE_DISTANCE = 80.0
+
     def _initialize_goal_positions(self):
         """Initialize goal positions for bay scenario"""
         goal_state = self.planning_problem.goal.state_list[0]
@@ -1556,7 +1558,7 @@ class BusStopBayPlanner(BaseStateMachinePlanner):
         if not self._completed_stop_service or not isinstance(self.current_state, HeadingState):
             return False
         distance_after_stop = float(state_current.position[0]) - float(self.goal_x)
-        return distance_after_stop > 35.0
+        return distance_after_stop > self.MISSION_COMPLETE_DISTANCE
 
 
 # Factory function for creating appropriate planner

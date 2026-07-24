@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt
 import yaml
 from matplotlib.patches import FancyBboxPatch
 
-
 PATH_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_ROOT = PATH_ROOT / "configurations"
 
@@ -23,15 +22,18 @@ plt.rcParams.update(
         "font.family": "serif",
         "font.serif": ["Times New Roman", "DejaVu Serif"],
         "mathtext.fontset": "stix",
-        "font.size": 10,
+        "font.size": 11,
     }
 )
 
 
-BOX_W = 3.25
+BOX_W = 3.75
 BOX_H = 1.75
 TOP_Y = 5.15
 BOTTOM_Y = 1.55
+BASE_FONT_SIZE = 11
+TITLE_FONT_SIZE = 13
+GROUP_TITLE_FONT_SIZE = 12
 
 
 def _load_config(scenario_type: str, filename: str) -> dict[str, Any]:
@@ -53,7 +55,7 @@ def _num(value: Any) -> str:
         numeric = float(value)
         if numeric != 0.0 and abs(numeric) < 1e-3:
             exponent = int(math.floor(math.log10(abs(numeric))))
-            mantissa = numeric / (10 ** exponent)
+            mantissa = numeric / (10**exponent)
             if math.isclose(abs(mantissa), 1.0, rel_tol=1e-9, abs_tol=1e-12):
                 sign = "-" if numeric < 0 else ""
                 return rf"{sign}1\times10^{{{exponent}}}"
@@ -85,12 +87,18 @@ def _s_line(config: dict[str, Any]) -> str:
     s_max = _cfg(config, "sampling", "s_max", default=None)
     if s_min is None or s_max is None:
         return "target: goal-region center"
-    return rf"$s-s_{{\mathrm{{goal}}}}\in [{_num(s_min)},\,{_num(s_max)}]\,\mathrm{{m}}$"
+    return (
+        rf"$s-s_{{\mathrm{{goal}}}}\in [{_num(s_min)},\,{_num(s_max)}]\,\mathrm{{m}}$"
+    )
 
 
-def _box_geometry(name: str, state_x: dict[str, float]) -> dict[str, float]:
-    x = state_x[name]
-    y = TOP_Y if name in {"HEADING", "ARRIVING", "ALIGN", "MERGE"} else BOTTOM_Y
+def _box_geometry(name: str, state_x: dict[str, Any]) -> dict[str, float]:
+    position = state_x[name]
+    if isinstance(position, tuple):
+        x, y = position
+    else:
+        x = position
+        y = TOP_Y if name in {"HEADING", "ARRIVING", "ALIGN", "MERGE"} else BOTTOM_Y
     return {
         "x": x,
         "y": y,
@@ -103,9 +111,15 @@ def _box_geometry(name: str, state_x: dict[str, float]) -> dict[str, float]:
     }
 
 
-def _draw_state(ax, state_x, name, title, lines, *, implicit=False):
+def _draw_state(
+    ax, state_x, name, title, lines, *, implicit=False, fontsize=BASE_FONT_SIZE
+):
     box = _box_geometry(name, state_x)
-    title_size = 10.0 if len(title) > 20 else 11.0
+    title_size = (
+        fontsize - 1.0
+        if len(title) > 20
+        else fontsize - 0.5 if len(title) > 14 else fontsize
+    )
     patch = FancyBboxPatch(
         (box["x"], box["y"]),
         BOX_W,
@@ -126,6 +140,7 @@ def _draw_state(ax, state_x, name, title, lines, *, implicit=False):
         va="top",
         fontsize=title_size,
         fontweight="bold",
+        fontfamily="DejaVu Sans",
         zorder=3,
     )
     ax.text(
@@ -134,14 +149,15 @@ def _draw_state(ax, state_x, name, title, lines, *, implicit=False):
         "\n".join(lines),
         ha="left",
         va="top",
-        fontsize=9.2,
+        fontsize=fontsize,
         linespacing=1.25,
         zorder=3,
     )
     return box
 
 
-def _draw_safety_state(ax, x, y):
+def _draw_safety_state(ax, x, y, *, fontsize=BASE_FONT_SIZE):
+    safety_color = "#d00000"
     width = 3.95
     height = 1.92
     box = {
@@ -159,8 +175,8 @@ def _draw_safety_state(ax, x, y):
         width,
         height,
         boxstyle="round,pad=0.025,rounding_size=0.04",
-        facecolor="#fff1f0",
-        edgecolor="#9f1d20",
+        facecolor="#fff7f3",
+        edgecolor=safety_color,
         linewidth=1.55,
         linestyle="--",
         zorder=2,
@@ -172,9 +188,10 @@ def _draw_safety_state(ax, x, y):
         "EMERGENCY_BRAKE",
         ha="center",
         va="top",
-        fontsize=10.7,
+        fontsize=fontsize,
         fontweight="bold",
-        color="#7f1517",
+        color=safety_color,
+        fontfamily="DejaVu Sans",
         zorder=3,
     )
     ax.text(
@@ -182,21 +199,22 @@ def _draw_safety_state(ax, x, y):
         box["top"] - 0.55,
         "\n".join(
             [
-                "controlled braking fallback",
+                "controlled braking",
+                "fallback",
                 r"$a_{\mathrm{brake}}=-\min(2.0,a_{\max})$",
-                r"$v_{\mathrm{des}}\in[-1\times10^{-5},\,1\times10^{-5}]\,\mathrm{m/s}$",
+                "brake to standstill",
             ]
         ),
         ha="left",
         va="top",
-        fontsize=9.0,
+        fontsize=fontsize,
         linespacing=1.25,
         zorder=3,
     )
     return box
 
 
-def _draw_normal_group(ax, x, y, width, height):
+def _draw_normal_group(ax, x, y, width, height, *, fontsize=GROUP_TITLE_FONT_SIZE):
     box = {
         "x": x,
         "y": y,
@@ -214,8 +232,8 @@ def _draw_normal_group(ax, x, y, width, height):
             height,
             boxstyle="round,pad=0.04,rounding_size=0.07",
             facecolor="none",
-            edgecolor="#333333",
-            linewidth=1.45,
+            edgecolor="black",
+            linewidth=1.55,
             zorder=-2,
         )
     )
@@ -225,10 +243,15 @@ def _draw_normal_group(ax, x, y, width, height):
         "NORMAL PLANNING STATES",
         ha="left",
         va="bottom",
-        fontsize=11.5,
+        fontsize=fontsize,
         fontweight="bold",
-        color="#333333",
-        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
+        color="white",
+        fontfamily="DejaVu Sans",
+        bbox={
+            "boxstyle": "round,pad=0.32,rounding_size=0.12",
+            "facecolor": "black",
+            "edgecolor": "black",
+        },
         zorder=3,
     )
     return box
@@ -253,13 +276,13 @@ def _arrow(ax, start, end, *, connectionstyle="arc3", linestyle="-"):
 
 
 def _polyline_arrow(
-        ax,
-        points,
-        *,
-        color="black",
-        linestyle="-",
-        linewidth=1.35,
-        zorder=1,
+    ax,
+    points,
+    *,
+    color="black",
+    linestyle="-",
+    linewidth=1.35,
+    zorder=1,
 ):
     if len(points) < 2:
         return
@@ -311,7 +334,7 @@ def _safety_arrow(ax, start, end, *, connectionstyle="arc3"):
     )
 
 
-def _label(ax, x, y, text, *, fontsize=8.5, ha="center", va="center"):
+def _label(ax, x, y, text, *, fontsize=BASE_FONT_SIZE, ha="center", va="center"):
     ax.text(
         x,
         y,
@@ -326,9 +349,12 @@ def _label(ax, x, y, text, *, fontsize=8.5, ha="center", va="center"):
 
 
 def _draw_emergency_brake_overlay(
-        ax,
-        emergency_box,
-        normal_box,
+    ax,
+    emergency_box,
+    normal_box,
+    *,
+    compact=False,
+    fontsize=BASE_FONT_SIZE,
 ):
     entry_start = (normal_box["right"], normal_box["top"] - 0.98)
     entry_top_x = emergency_box["cx"]
@@ -349,8 +375,12 @@ def _draw_emergency_brake_overlay(
         ax,
         entry_label_x,
         entry_label_y,
-        r"$\mathrm{trajectory\_planning\_failed}\ \vee\ \mathrm{collision\_risk}$",
-        fontsize=9.4,
+        (
+            r"$\mathrm{planning\_failed}\ \vee\ \mathrm{collision\_risk}$"
+            if compact
+            else r"$\mathrm{trajectory\_planning\_failed}\ \vee\ \mathrm{collision\_risk}$"
+        ),
+        fontsize=fontsize,
     )
 
     recovery_end = (normal_box["right"], normal_box["bottom"] + 0.02)
@@ -371,20 +401,32 @@ def _draw_emergency_brake_overlay(
         ax,
         recovery_label_x,
         recovery_label_y,
-        "\n".join(
-            [
-                r"$v_{\mathrm{ego}} < v_{\mathrm{stop}}\ \wedge\ \neg\mathrm{imminent\_collision\_risk}$",
-                r"$x_0 \leftarrow \mathrm{ego\_state}_{\mathrm{stop}}$",
-                r"$\mathrm{state}\leftarrow\mathrm{select\_normal\_state}(\mathrm{ego\_state}_{\mathrm{stop}})$",
-            ]
+        (
+            "\n".join(
+                [
+                    r"$|v|,|a|,|\delta|\leq10^{-3}$",
+                    r"$\mathrm{risk\ cleared}$",
+                    r"$\mathrm{restart\ from}\ \mathrm{ego\_state}_{\mathrm{stop}}$",
+                ]
+            )
+            if compact
+            else "\n".join(
+                [
+                    r"$|v|,|a|,|\delta|\leq10^{-3}\ \wedge\ \neg\mathrm{imminent\_collision\_risk}$",
+                    r"$x_0 \leftarrow \mathrm{ego\_state}_{\mathrm{stop}}$",
+                    r"$\mathrm{state}\leftarrow\mathrm{select\_normal\_state}(\mathrm{ego\_state}_{\mathrm{stop}})$",
+                ]
+            )
         ),
-        fontsize=9.0,
+        fontsize=fontsize,
         va="top",
     )
 
 
 def _save(fig, output_dir, stem: str, show: bool):
-    output_dir = Path(output_dir) if output_dir is not None else Path(__file__).resolve().parent
+    output_dir = (
+        Path(output_dir) if output_dir is not None else Path(__file__).resolve().parent
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
     pdf_path = output_dir / f"{stem}.pdf"
     png_path = output_dir / f"{stem}.png"
@@ -402,36 +444,43 @@ def _save(fig, output_dir, stem: str, show: bool):
 def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
     """Generate PDF and PNG versions of the bus-stop-bay state machine."""
     scenario = "bus_stop_bay"
+    bay_font_size = BASE_FONT_SIZE - 1
     cfg_heading = _load_config(scenario, "heading_to_next.yaml")
     cfg_arriving = _load_config(scenario, "arriving.yaml")
     cfg_align = _load_config(scenario, "before_stopping_align.yaml")
     cfg_merge = _load_config(scenario, "before_stopping_merge.yaml")
     cfg_final = _load_config(scenario, "before_stopping_final.yaml")
-    cfg_stopping = _load_config(scenario, "stopping.yaml")
     cfg_departing = _load_config(scenario, "departure.yaml")
 
     state_x = {
-        "HEADING": 0.0,
-        "ARRIVING": 4.25,
-        "MERGE": 8.50,
-        "ALIGN": 12.75,
-        "DEPARTING": -4.25,
-        "SERVICE": 0.0,
-        "STOPPING": 4.25,
-        "FINAL": 12.75,
+        "DEPARTING": (-4.15, 1.18),
+        "HEADING": (0.00, 4.72),
+        "ARRIVING": (4.60, 4.72),
+        "MERGE": (9.20, 4.72),
+        "ALIGN": (13.80, 4.72),
+        "SERVICE": (0.00, 1.18),
+        "STOPPING": (4.60, 1.18),
+        "FINAL": (13.80, 1.18),
     }
 
-    fig, ax = plt.subplots(figsize=(23, 10))
-    ax.set_xlim(-5.0, 21.6)
-    ax.set_ylim(-0.80, 8.75)
+    fig, ax = plt.subplots(figsize=(19.0, 8.0))
+    ax.set_xlim(-4.95, 22.70)
+    ax.set_ylim(-0.50, 7.55)
     ax.axis("off")
 
-    normal_group = _draw_normal_group(ax, -4.75, 0.92, 21.25, 7.08)
+    normal_group = _draw_normal_group(
+        ax,
+        -4.65,
+        0.82,
+        22.55,
+        6.28,
+        fontsize=GROUP_TITLE_FONT_SIZE - 1,
+    )
 
-    composite_x = 8.15
-    composite_y = 1.18
-    composite_w = 8.20
-    composite_h = 6.72
+    composite_x = 8.85
+    composite_y = 0.98
+    composite_w = 8.85
+    composite_h = 6.02
     ax.add_patch(
         FancyBboxPatch(
             (composite_x, composite_y),
@@ -445,13 +494,15 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         )
     )
     ax.text(
-        composite_x + composite_w / 2,
-        composite_y + composite_h - 0.14,
-        "BEFORE STOPPING (COMPOSITE STATE)",
-        ha="center",
-        va="top",
-        fontsize=11.2,
+        composite_x + 0.32,
+        composite_y + composite_h + 0.06,
+        "BEFORE STOPPING",
+        ha="left",
+        va="bottom",
+        fontsize=GROUP_TITLE_FONT_SIZE - 1,
         fontweight="bold",
+        fontfamily="DejaVu Sans",
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
         zorder=3,
     )
 
@@ -459,90 +510,122 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         ax,
         state_x,
         "HEADING",
-        "HEADING TO NEXT STATION",
-        [_velocity_line(cfg_heading), _d_line(cfg_heading), "reference path: lanelet 2"],
+        "HEADING TO NEXT",
+        [_velocity_line(cfg_heading), _d_line(cfg_heading), "reference: lanelet 2"],
+        fontsize=bay_font_size,
     )
     arriving = _draw_state(
         ax,
         state_x,
         "ARRIVING",
         "ARRIVING",
-        [_velocity_line(cfg_arriving), _d_line(cfg_arriving), "reference path: lanelet 1"],
+        [_velocity_line(cfg_arriving), _d_line(cfg_arriving), "reference: lanelet 1"],
+        fontsize=bay_font_size,
     )
     merge = _draw_state(
         ax,
         state_x,
         "MERGE",
-        "BEFORE STOPPING: MERGE",
-        [_velocity_line(cfg_merge), _d_line(cfg_merge), "entry-to-alignment curve"],
+        "MERGE",
+        [_velocity_line(cfg_merge), _d_line(cfg_merge), "curved entry path"],
+        fontsize=bay_font_size,
     )
     align = _draw_state(
         ax,
         state_x,
         "ALIGN",
-        "BEFORE STOPPING: ALIGN",
-        [_velocity_line(cfg_align), _d_line(cfg_align), "blend to bay stop line"],
+        "ALIGNMENT",
+        [_velocity_line(cfg_align), _d_line(cfg_align), "blend to stop line"],
+        fontsize=bay_font_size,
     )
     final = _draw_state(
         ax,
         state_x,
         "FINAL",
-        "BEFORE STOPPING: FINAL",
-        [_velocity_line(cfg_final), _d_line(cfg_final), _s_line(cfg_final), "reference: bay stop line"],
+        "FINAL",
+        [
+            r"$v_{\mathrm{des}}=0\,\mathrm{m/s}$",
+            _d_line(cfg_final),
+            _s_line(cfg_final),
+            "target: stop line",
+        ],
+        fontsize=bay_font_size,
     )
     stopping = _draw_state(
         ax,
         state_x,
         "STOPPING",
         "STOPPING",
-        [_velocity_line(cfg_stopping), "direct monotonic braking", "no longitudinal target chase"],
+        [
+            r"$v_{\mathrm{des}}=0\,\mathrm{m/s}$",
+            "monotonic braking",
+            "no position target",
+        ],
+        fontsize=bay_font_size,
     )
     service = _draw_state(
         ax,
         state_x,
         "SERVICE",
         "BOARDING / ALIGHTING",
-        ["implicit stopped-state hold", r"$v = 0$", r"hold while counter $\leq 10$"],
+        ["stopped-state hold", r"$v = 0$", r"hold while counter $\leq 10$"],
         implicit=True,
+        fontsize=bay_font_size,
     )
     departing = _draw_state(
         ax,
         state_x,
         "DEPARTING",
         "DEPARTING",
-        [_velocity_line(cfg_departing), _d_line(cfg_departing), "smooth merge to lanelet 2"],
+        [
+            _velocity_line(cfg_departing),
+            r"$d\in[-0.75,\,0.75]\,\mathrm{m}$",
+            "merge to lanelet 2",
+        ],
+        fontsize=bay_font_size,
     )
-    emergency = _draw_safety_state(ax, 17.25, 3.25)
+    emergency = _draw_safety_state(ax, 18.30, 3.05, fontsize=bay_font_size)
 
-    heading_to_arriving = _cfg(cfg_heading, "planning", "distance_heading_to_next_to_arriving")
-    arriving_to_merge = _cfg(cfg_arriving, "planning", "distance_arriving_to_next_to_before_stopping")
+    heading_to_arriving = _cfg(
+        cfg_heading, "planning", "distance_heading_to_next_to_arriving"
+    )
+    arriving_to_merge = _cfg(
+        cfg_arriving, "planning", "distance_arriving_to_next_to_before_stopping"
+    )
     merge_to_align = _cfg(cfg_merge, "planning", "distance_arriving_to_stopping")
-    align_to_final = _cfg(cfg_align, "planning", "distance_arriving_to_next_to_before_stopping")
-    final_to_stopping = _cfg(cfg_final, "planning", "distance_before_stopping_to_stopping")
+    align_to_final = _cfg(
+        cfg_align, "planning", "distance_arriving_to_next_to_before_stopping"
+    )
+    final_to_stopping = _cfg(
+        cfg_final, "planning", "distance_before_stopping_to_stopping"
+    )
     departing_v = _cfg(cfg_departing, "sampling", "desire_velocity")
 
     _arrow(ax, (heading["right"], heading["cy"]), (arriving["left"], arriving["cy"]))
     _label(
         ax,
         (heading["right"] + arriving["left"]) / 2,
-        heading["top"] + 0.28,
-        rf"$0 < x_{{\mathrm{{goal}}}}-x < {_num(heading_to_arriving)}\,\mathrm{{m}}$",
+        heading["top"] + 0.25,
+        rf"$0<x_{{\mathrm{{goal}}}}-x<{_num(heading_to_arriving)}\,\mathrm{{m}}$",
+        fontsize=bay_font_size,
     )
 
     _arrow(ax, (arriving["right"], arriving["cy"]), (merge["left"], merge["cy"]))
     _label(
         ax,
         (arriving["right"] + merge["left"]) / 2,
-        arriving["top"] + 0.28,
-        rf"$|x_{{\mathrm{{goal}}}}-x| < {_num(arriving_to_merge)}\,\mathrm{{m}}$",
+        arriving["top"] + 0.25,
+        rf"$|x_{{\mathrm{{goal}}}}-x|<{_num(arriving_to_merge)}\,\mathrm{{m}}$",
+        fontsize=bay_font_size,
     )
 
     _arrow(ax, (merge["right"], merge["cy"]), (align["left"], align["cy"]))
     _label(
         ax,
         (merge["right"] + align["left"]) / 2,
-        merge["top"] + 0.28,
-        rf"$|x_{{\mathrm{{goal}}}}-x| < {_num(merge_to_align)}\,\mathrm{{m}}$",
+        merge["top"] + 0.25,
+        rf"$|x_{{\mathrm{{goal}}}}-x|<{_num(merge_to_align)}\,\mathrm{{m}}$",
+        fontsize=bay_font_size,
     )
 
     _arrow(ax, (align["cx"], align["bottom"]), (final["cx"], final["top"]))
@@ -550,7 +633,8 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         ax,
         align["cx"] + 0.18,
         (align["bottom"] + final["top"]) / 2,
-        rf"$|x_{{\mathrm{{goal}}}}-x| < {_num(align_to_final)}\,\mathrm{{m}}$",
+        rf"$|x_{{\mathrm{{goal}}}}-x|<{_num(align_to_final)}\,\mathrm{{m}}$",
+        fontsize=bay_font_size,
         ha="left",
     )
 
@@ -558,30 +642,35 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
     _label(
         ax,
         (final["left"] + stopping["right"]) / 2,
-        3.05,
+        final["cy"] + 0.60,
         "\n".join(
             [
-                rf"$[|x_{{\mathrm{{goal}}}}-x|<{_num(final_to_stopping)}\,\mathrm{{m}}$",
-                r"$\ \vee\ (x>x_{\mathrm{goal}}\wedge v<0.55)]$",
-                r"$|x-x_{\mathrm{goal}}|\leq1.5\,\mathrm{m}$",
-                r"$v\leq0.55,\ |\delta|\leq0.12\,\mathrm{rad}$",
+                rf"transition gate: $-{_num(final_to_stopping)}"
+                r"<x-x_{\mathrm{goal}}\leq1.5\,\mathrm{m}$",
+                r"$v\leq0.55\,\mathrm{m/s},\ |\delta|\leq0.12\,\mathrm{rad}$",
                 r"$|y-y_{\mathrm{goal}}|\leq1.2\,\mathrm{m}$",
             ]
         ),
-        fontsize=7.6,
+        fontsize=bay_font_size,
     )
 
     _arrow(ax, (stopping["left"], stopping["cy"]), (service["right"], service["cy"]))
     _label(
         ax,
         (stopping["left"] + service["right"]) / 2,
-        4.12,
-        "inside goal rectangle\n" + r"$v < 10^{-5}\,\mathrm{m/s}$",
-        fontsize=8.2,
+        3.52,
+        "inside goal area\n" + r"$v<10^{-5}\,\mathrm{m/s}$",
+        fontsize=bay_font_size,
     )
 
     _arrow(ax, (service["left"], service["cy"]), (departing["right"], departing["cy"]))
-    _label(ax, -0.35, 3.62, r"$\mathrm{stopping\ counter}>10$", fontsize=7.9)
+    _label(
+        ax,
+        (service["left"] + departing["right"]) / 2,
+        3.38,
+        r"$\mathrm{stopping\ counter}>10$",
+        fontsize=bay_font_size,
+    )
 
     _arrow(
         ax,
@@ -591,49 +680,73 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
     )
     _label(
         ax,
-        -2.15,
-        (departing["top"] + heading["bottom"]) / 2 + 0.20,
+        -2.10,
+        (departing["top"] + heading["bottom"]) / 2,
         "\n".join(
             [
                 rf"$v\geq{_num(departing_v)}\,\mathrm{{m/s}}$",
                 r"$|\psi|<0.02\,\mathrm{rad},\ |a|<0.2\,\mathrm{m/s^2}$",
-                r"offset to lanelet 2 $\leq0.6\,\mathrm{m}$",
+                r"lane offset $\leq0.6\,\mathrm{m}$",
             ]
         ),
-        fontsize=7.9,
+        fontsize=bay_font_size,
     )
 
-    terminal_x, terminal_y = -3.55, 5.62
+    terminal_x, terminal_y = -4.30, 5.00
+    terminal_w, terminal_h = 2.15, 1.18
     ax.add_patch(
         FancyBboxPatch(
             (terminal_x, terminal_y),
-            1.8,
-            0.82,
-            boxstyle="round,pad=0.03,rounding_size=0.15",
+            terminal_w,
+            terminal_h,
+            boxstyle="round,pad=0.03,rounding_size=0.10",
             facecolor="#f2f2f2",
             edgecolor="black",
             linewidth=1.35,
         )
     )
     ax.text(
-        terminal_x + 0.9,
-        terminal_y + 0.41,
+        terminal_x + terminal_w / 2,
+        terminal_y + terminal_h / 2,
         "TERMINAL",
         ha="center",
         va="center",
-        fontsize=10.5,
+        fontsize=bay_font_size,
         fontweight="bold",
+        fontfamily="DejaVu Sans",
     )
-    _arrow(ax, (heading["left"], heading["cy"]), (terminal_x + 1.8, terminal_y + 0.41))
-    _label(ax, -1.72, heading["top"] + 0.28, r"$\mathrm{final\_stop}=\mathrm{True}$", fontsize=8.1)
+    _arrow(
+        ax,
+        (heading["left"], heading["cy"]),
+        (terminal_x + terminal_w, terminal_y + terminal_h / 2),
+    )
+    _label(
+        ax,
+        -1.10,
+        heading["cy"] + 0.34,
+        "\n".join(
+            [
+                r"$\mathrm{service\ completed}$",
+                r"$x-x_{\mathrm{goal}}>80\,\mathrm{m}$",
+            ]
+        ),
+        fontsize=bay_font_size,
+    )
 
     _draw_emergency_brake_overlay(
         ax,
         emergency,
         normal_group,
+        compact=True,
+        fontsize=bay_font_size,
     )
 
-    ax.set_title("State Machine for Bus-Stop-Bay Behavior Planning", fontsize=15, fontweight="bold", pad=12)
+    ax.set_title(
+        "Bus-Stop-Bay State Machine",
+        fontsize=TITLE_FONT_SIZE,
+        fontweight="bold",
+        pad=12,
+    )
     return _save(fig, output_dir, "bus_stop_bay_state_machine", show)
 
 
@@ -646,33 +759,41 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
     cfg_departing = _load_config(scenario, "departure.yaml")
 
     state_x = {
-        "DEPARTING": -4.25,
-        "HEADING": 0.0,
-        "ARRIVING": 4.25,
-        "STOPPING": 8.50,
-        "SERVICE": 2.15,
+        "DEPARTING": (-4.25, 1.42),
+        "HEADING": (0.0, 4.90),
+        "ARRIVING": (5.95, 4.90),
+        "STOPPING": (9.10, 1.42),
+        "SERVICE": (2.15, 1.42),
     }
 
-    fig, ax = plt.subplots(figsize=(19.5, 8.2))
-    ax.set_xlim(-5.0, 16.75)
-    ax.set_ylim(-0.65, 8.2)
+    fig, ax = plt.subplots(figsize=(17.3, 7.5))
+    ax.set_xlim(-4.95, 19.00)
+    ax.set_ylim(-0.48, 7.15)
     ax.axis("off")
 
-    normal_group = _draw_normal_group(ax, -4.65, 1.02, 16.40, 6.40)
+    normal_group = _draw_normal_group(ax, -4.65, 1.04, 17.60, 5.82)
 
     heading = _draw_state(
         ax,
         state_x,
         "HEADING",
-        "HEADING TO NEXT STATION",
-        [_velocity_line(cfg_heading), _d_line(cfg_heading), "reference path: lanelet 1"],
+        "HEADING TO NEXT",
+        [
+            _velocity_line(cfg_heading),
+            _d_line(cfg_heading),
+            "reference path: lanelet 1",
+        ],
     )
     arriving = _draw_state(
         ax,
         state_x,
         "ARRIVING",
         "ARRIVING",
-        [_velocity_line(cfg_arriving), _d_line(cfg_arriving), "reference path: lanelet 2"],
+        [
+            _velocity_line(cfg_arriving),
+            _d_line(cfg_arriving),
+            "reference path: lanelet 2",
+        ],
     )
     stopping = _draw_state(
         ax,
@@ -686,7 +807,7 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
         state_x,
         "SERVICE",
         "BOARDING / ALIGHTING",
-        ["implicit stopped-state hold", r"$v = 0$", r"hold while counter $\leq 10$"],
+        ["stopped-state hold", r"$v = 0$", r"hold while counter $\leq 10$"],
         implicit=True,
     )
     departing = _draw_state(
@@ -694,19 +815,30 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
         state_x,
         "DEPARTING",
         "DEPARTING",
-        [_velocity_line(cfg_departing), _d_line(cfg_departing), "smooth merge to lanelet 1"],
+        [
+            r"$v_{\mathrm{des}}=2.55\,\mathrm{m/s}$",
+            r"$d\in[-0.45,\,0.45]\,\mathrm{m}$",
+            "smooth merge to lanelet 1",
+        ],
     )
-    emergency = _draw_safety_state(ax, 12.25, 3.15)
+    emergency = _draw_safety_state(ax, 13.60, 3.15)
 
-    heading_to_arriving = _cfg(cfg_heading, "planning", "distance_heading_to_next_to_arriving")
-    arriving_to_stopping = _cfg(cfg_arriving, "planning", "distance_arriving_to_stopping")
-    departing_v = _cfg(cfg_departing, "sampling", "desire_velocity")
+    heading_to_arriving = _cfg(
+        cfg_heading, "planning", "distance_heading_to_next_to_arriving"
+    )
+    arriving_to_stopping = _cfg(
+        cfg_arriving, "planning", "distance_arriving_to_stopping"
+    )
+    departing_v = min(
+        3.5,
+        float(_cfg(cfg_departing, "sampling", "v_max", default=3.5)),
+    )
 
     _arrow(ax, (heading["right"], heading["cy"]), (arriving["left"], arriving["cy"]))
     _label(
         ax,
         (heading["right"] + arriving["left"]) / 2,
-        heading["top"] + 0.28,
+        heading["cy"] + 0.30,
         rf"$0 < x_{{\mathrm{{goal}}}}-x < {_num(heading_to_arriving)}\,\mathrm{{m}}$",
     )
 
@@ -720,24 +852,29 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
     )
     _label(
         ax,
-        (arriving["right"] + stopping["left"]) / 2,
-        arriving["top"] + 0.28,
+        stopping["cx"] - 0.78,
+        4.08,
         rf"$|x_{{\mathrm{{goal}}}}-x| < {_num(arriving_to_stopping)}\,\mathrm{{m}}$",
+        ha="right",
     )
 
     _arrow(ax, (stopping["left"], stopping["cy"]), (service["right"], service["cy"]))
     _label(
         ax,
         (stopping["left"] + service["right"]) / 2,
-        stopping["top"] + 0.42,
-        r"$x < x_{\mathrm{goal}}+\frac{L_{\mathrm{goal}}}{2}$"
+        stopping["cy"] + 0.42,
+        r"$x \leq x_{\mathrm{goal}}+\frac{L_{\mathrm{goal}}}{2}$"
         "\n"
         r"$\wedge\ v < 10^{-5}\,\mathrm{m/s}$",
-        fontsize=8.1,
     )
 
     _arrow(ax, (service["left"], service["cy"]), (departing["right"], departing["cy"]))
-    _label(ax, (service["left"] + departing["right"]) / 2, 3.55, r"$\mathrm{stopping\ counter}>10$", fontsize=8.1)
+    _label(
+        ax,
+        (service["left"] + departing["right"]) / 2,
+        service["cy"] + 0.35,
+        r"$\mathrm{stopping\ counter}>10$",
+    )
 
     _arrow(
         ax,
@@ -748,40 +885,58 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
     _label(
         ax,
         -2.20,
-        (departing["top"] + heading["bottom"]) / 2 + 0.20,
+        (departing["top"] + heading["bottom"]) / 2 - 0.10,
         "\n".join(
             [
                 rf"$v\geq{_num(departing_v)}\,\mathrm{{m/s}}$",
                 r"$|\psi|<0.02\,\mathrm{rad}$",
                 r"$|a|<0.2\,\mathrm{m/s^2}$",
+                r"$|d_{\mathrm{lanelet\ 1}}|\leq0.6\,\mathrm{m}$",
             ]
         ),
-        fontsize=8.0,
     )
 
-    terminal_x, terminal_y = -3.55, 5.62
+    terminal_x, terminal_y = -4.28, 5.12
+    terminal_w, terminal_h = 2.35, 1.25
     ax.add_patch(
         FancyBboxPatch(
             (terminal_x, terminal_y),
-            1.8,
-            0.82,
-            boxstyle="round,pad=0.03,rounding_size=0.15",
+            terminal_w,
+            terminal_h,
+            boxstyle="round,pad=0.03,rounding_size=0.08",
             facecolor="#f2f2f2",
             edgecolor="black",
             linewidth=1.35,
         )
     )
     ax.text(
-        terminal_x + 0.9,
-        terminal_y + 0.41,
+        terminal_x + terminal_w / 2,
+        terminal_y + terminal_h / 2,
         "TERMINAL",
         ha="center",
         va="center",
-        fontsize=10.5,
+        fontsize=BASE_FONT_SIZE,
         fontweight="bold",
+        fontfamily="DejaVu Sans",
     )
-    _arrow(ax, (heading["left"], heading["cy"]), (terminal_x + 1.8, terminal_y + 0.41))
-    _label(ax, -1.72, heading["top"] + 0.28, r"$\mathrm{final\_stop}=\mathrm{True}$", fontsize=8.1)
+    _arrow(
+        ax,
+        (heading["left"], heading["cy"]),
+        (terminal_x + terminal_w, terminal_y + terminal_h / 2),
+    )
+    _label(
+        ax,
+        -0.98,
+        heading["cy"] + 0.32,
+        "\n".join(
+            [
+                r"$\mathrm{service\ completed}$",
+                r"$x-x_{\mathrm{goal}}>90\,\mathrm{m}$",
+                r"$|d_{\mathrm{lanelet\ 1}}|<0.8\,\mathrm{m}$",
+            ]
+        ),
+        fontsize=BASE_FONT_SIZE - 1,
+    )
 
     _draw_emergency_brake_overlay(
         ax,
@@ -789,7 +944,12 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
         normal_group,
     )
 
-    ax.set_title("State Machine for Bus-Stop-Bulb Behavior Planning", fontsize=15, fontweight="bold", pad=12)
+    ax.set_title(
+        "Bus-Stop-Bulb State Machine",
+        fontsize=TITLE_FONT_SIZE,
+        fontweight="bold",
+        pad=12,
+    )
     return _save(fig, output_dir, "bus_stop_bulb_state_machine", show)
 
 
