@@ -724,12 +724,7 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         ax,
         -1.10,
         heading["cy"] + 0.34,
-        "\n".join(
-            [
-                r"$\mathrm{service\ completed}$",
-                r"$x-x_{\mathrm{goal}}>80\,\mathrm{m}$",
-            ]
-        ),
+        r"$\mathrm{final\_stop}=\mathrm{True}$",
         fontsize=bay_font_size,
     )
 
@@ -928,13 +923,7 @@ def draw_bus_stop_bulb_state_diagram(output_dir=None, show=False):
         ax,
         -0.98,
         heading["cy"] + 0.32,
-        "\n".join(
-            [
-                r"$\mathrm{service\ completed}$",
-                r"$x-x_{\mathrm{goal}}>90\,\mathrm{m}$",
-                r"$|d_{\mathrm{lanelet\ 1}}|<0.8\,\mathrm{m}$",
-            ]
-        ),
+        r"$\mathrm{final\_stop}=\mathrm{True}$",
         fontsize=BASE_FONT_SIZE - 1,
     )
 
