@@ -659,7 +659,13 @@ def draw_bus_stop_bay_state_diagram(output_dir=None, show=False):
         ax,
         (stopping["left"] + service["right"]) / 2,
         3.52,
-        "inside goal area\n" + r"$v<10^{-5}\,\mathrm{m/s}$",
+        "\n".join(
+            [
+                r"$|x-x_{\mathrm{goal}}|\leq L_{\mathrm{goal}}/2$",
+                r"$\wedge\ |y-y_{\mathrm{goal}}|\leq W_{\mathrm{goal}}/2$",
+                r"$\wedge\ v<10^{-5}\,\mathrm{m/s}$",
+            ]
+        ),
         fontsize=bay_font_size,
     )
 
